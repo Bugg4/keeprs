@@ -29,3 +29,46 @@ impl Entry {
         Self::default()
     }
 }
+
+/// Represents a step in the navigation path (for Miller columns).
+#[derive(Debug, Clone)]
+pub enum NavigationStep {
+    /// A group/folder was selected.
+    Group { uuid: String, name: String },
+    /// An entry was selected.
+    Entry { uuid: String, title: String },
+}
+
+/// Navigation path tracking the current drill-down state.
+#[derive(Debug, Clone, Default)]
+pub struct NavigationPath {
+    /// The steps in the navigation (each click adds a step).
+    pub steps: Vec<NavigationStep>,
+}
+
+impl NavigationPath {
+    /// Create a new empty navigation path.
+    pub fn new() -> Self {
+        Self { steps: Vec::new() }
+    }
+
+    /// Add a group selection to the path.
+    pub fn push_group(&mut self, uuid: String, name: String) {
+        self.steps.push(NavigationStep::Group { uuid, name });
+    }
+
+    /// Add an entry selection to the path.
+    pub fn push_entry(&mut self, uuid: String, title: String) {
+        self.steps.push(NavigationStep::Entry { uuid, title });
+    }
+
+    /// Truncate the path to the given depth (0 = clear all).
+    pub fn truncate(&mut self, depth: usize) {
+        self.steps.truncate(depth);
+    }
+
+    /// Get the current depth.
+    pub fn depth(&self) -> usize {
+        self.steps.len()
+    }
+}

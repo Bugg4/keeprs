@@ -1,7 +1,7 @@
 //! Main application component.
 
+use crate::components::column_view::{ColumnView, ColumnViewInput, ColumnViewOutput};
 use crate::components::entry_edit::{EntryEdit, EntryEditInput, EntryEditOutput};
-use crate::components::entry_view::{EntryView, EntryViewInput, EntryViewOutput};
 use crate::components::sidebar::{Sidebar, SidebarInput, SidebarOutput};
 use crate::components::unlock::{UnlockDialog, UnlockInput, UnlockOutput};
 use crate::config::Config;
@@ -54,7 +54,7 @@ pub struct App {
     // Child components
     unlock: Controller<UnlockDialog>,
     sidebar: Controller<Sidebar>,
-    entry_view: Controller<EntryView>,
+    column_view: Controller<ColumnView>,
     entry_edit: Controller<EntryEdit>,
 }
 
@@ -68,7 +68,7 @@ impl Component for App {
     view! {
         gtk4::ApplicationWindow {
             set_title: Some("Keeprs"),
-            set_default_width: 1000,
+            set_default_width: 1100,
             set_default_height: 700,
 
             #[name = "main_stack"]
@@ -96,7 +96,7 @@ impl Component for App {
                     set_start_child = model.sidebar.widget(),
 
                     #[wrap(Some)]
-                    set_end_child = model.entry_view.widget(),
+                    set_end_child = model.column_view.widget(),
                 } -> {
                     set_name: "main",
                 },
@@ -122,12 +122,12 @@ impl Component for App {
                 SidebarOutput::GroupSelected(uuid) => AppInput::GroupSelected(uuid),
             });
 
-        let entry_view = EntryView::builder()
+        let column_view = ColumnView::builder()
             .launch(())
             .forward(sender.input_sender(), |output| match output {
-                EntryViewOutput::EditEntry(entry) => AppInput::EditEntry(entry),
-                EntryViewOutput::DeleteEntry(uuid) => AppInput::DeleteEntry(uuid),
-                EntryViewOutput::AddEntry => AppInput::AddEntry,
+                ColumnViewOutput::EditEntry(entry) => AppInput::EditEntry(entry),
+                ColumnViewOutput::DeleteEntry(uuid) => AppInput::DeleteEntry(uuid),
+                ColumnViewOutput::AddEntry => AppInput::AddEntry,
             });
 
         let entry_edit = EntryEdit::builder()
@@ -145,7 +145,7 @@ impl Component for App {
             root_group: None,
             unlock,
             sidebar,
-            entry_view,
+            column_view,
             entry_edit,
         };
 
@@ -177,8 +177,8 @@ impl Component for App {
                         // Populate sidebar
                         self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
 
-                        // Select root group by default
-                        sender.input(AppInput::GroupSelected(root.uuid.clone()));
+                        // Set root group in column view
+                        self.column_view.emit(ColumnViewInput::SetRootGroup(root.clone()));
 
                         // Switch to main view
                         widgets.main_stack.set_visible_child_name("main");
@@ -198,10 +198,14 @@ impl Component for App {
             AppInput::GroupSelected(uuid) => {
                 self.current_group_uuid = Some(uuid.clone());
 
-                // Find the group and show its entries
+                // Find the group and show its entries in column view
                 if let Some(ref root) = self.root_group {
                     if let Some(group) = find_group_by_uuid(root, &uuid) {
-                        self.entry_view.emit(EntryViewInput::ShowEntries(group.entries.clone()));
+                        self.column_view.emit(ColumnViewInput::SelectGroup {
+                            uuid: uuid.clone(),
+                            name: group.name.clone(),
+                            group: group.clone(),
+                        });
                     }
                 }
             }
@@ -211,7 +215,7 @@ impl Component for App {
             AppInput::DeleteEntry(uuid) => {
                 // TODO: Implement delete through the database
                 tracing::info!("Delete entry: {}", uuid);
-                if let Some(ref db) = self.database {
+                if let Some(ref _db) = self.database {
                     // For now, just refresh the view
                     if let Some(ref group_uuid) = self.current_group_uuid {
                         sender.input(AppInput::GroupSelected(group_uuid.clone()));
