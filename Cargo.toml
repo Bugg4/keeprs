@@ -18,6 +18,9 @@ toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 dirs = "5.0"
 
+# Fuzzy search
+fuzzy-matcher = "0.3"
+
 # Async runtime (for file operations)
 tokio = { version = "1", features = ["rt", "fs"] }
 

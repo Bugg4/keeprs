@@ -2,6 +2,7 @@
 
 use crate::components::column_view::{ColumnView, ColumnViewInput, ColumnViewOutput};
 use crate::components::entry_edit::{EntryEdit, EntryEditInput, EntryEditOutput};
+use crate::components::search_bar::{SearchBar, SearchBarInput, SearchBarOutput};
 use crate::components::sidebar::{Sidebar, SidebarInput, SidebarOutput};
 use crate::components::unlock::{UnlockDialog, UnlockInput, UnlockOutput};
 use crate::config::Config;
@@ -33,6 +34,10 @@ pub enum AppInput {
     DatabaseUnlocked,
     /// Group selected in sidebar.
     GroupSelected(String),
+    /// Group selected from search with full data.
+    SearchGroupSelected { uuid: String, name: String, group: Group },
+    /// Entry selected from search.
+    SearchEntrySelected { entry: Entry, group_uuid: String },
     /// Entry actions.
     EditEntry(Entry),
     DeleteEntry(String),
@@ -53,6 +58,7 @@ pub struct App {
 
     // Child components
     unlock: Controller<UnlockDialog>,
+    search_bar: Controller<SearchBar>,
     sidebar: Controller<Sidebar>,
     column_view: Controller<ColumnView>,
     entry_edit: Controller<EntryEdit>,
@@ -88,13 +94,24 @@ impl Component for App {
                 // Main view with sidebar and content
                 add_child = &gtk4::Paned {
                     set_orientation: gtk4::Orientation::Horizontal,
-                    set_position: 250,
+                    set_position: 280,
                     set_shrink_start_child: false,
                     set_shrink_end_child: false,
 
+                    // Left side: search bar + sidebar
                     #[wrap(Some)]
-                    set_start_child = model.sidebar.widget(),
+                    set_start_child = &gtk4::Box {
+                        set_orientation: gtk4::Orientation::Vertical,
+                        set_vexpand: true,
 
+                        // Search bar at top
+                        model.search_bar.widget().clone() {},
+
+                        // Folder tree below
+                        model.sidebar.widget().clone() {},
+                    },
+
+                    // Right side: column view
                     #[wrap(Some)]
                     set_end_child = model.column_view.widget(),
                 } -> {
@@ -114,6 +131,17 @@ impl Component for App {
             .launch(())
             .forward(sender.input_sender(), |output| match output {
                 UnlockOutput::Unlocked(password) => AppInput::PasswordSubmitted(password),
+            });
+
+        let search_bar = SearchBar::builder()
+            .launch(())
+            .forward(sender.input_sender(), |output| match output {
+                SearchBarOutput::GroupSelected { uuid, name, group } => {
+                    AppInput::SearchGroupSelected { uuid, name, group }
+                }
+                SearchBarOutput::EntrySelected { entry, group_uuid } => {
+                    AppInput::SearchEntrySelected { entry, group_uuid }
+                }
             });
 
         let sidebar = Sidebar::builder()
@@ -144,6 +172,7 @@ impl Component for App {
             current_group_uuid: None,
             root_group: None,
             unlock,
+            search_bar,
             sidebar,
             column_view,
             entry_edit,
@@ -174,8 +203,9 @@ impl Component for App {
                         self.database = Some(Arc::new(RefCell::new(db)));
                         self.state = AppState::Unlocked;
 
-                        // Populate sidebar
+                        // Populate sidebar and search
                         self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
+                        self.search_bar.emit(SearchBarInput::SetRootGroup(root.clone()));
 
                         // Set root group in column view
                         self.column_view.emit(ColumnViewInput::SetRootGroup(root.clone()));
@@ -205,6 +235,28 @@ impl Component for App {
                             uuid: uuid.clone(),
                             name: group.name.clone(),
                             group: group.clone(),
+                        });
+                    }
+                }
+            }
+            AppInput::SearchGroupSelected { uuid, name, group } => {
+                self.current_group_uuid = Some(uuid.clone());
+                self.column_view.emit(ColumnViewInput::SelectGroup { uuid, name, group });
+            }
+            AppInput::SearchEntrySelected { entry, group_uuid } => {
+                // Select the group first, then the entry
+                self.current_group_uuid = Some(group_uuid.clone());
+                if let Some(ref root) = self.root_group {
+                    if let Some(group) = find_group_by_uuid(root, &group_uuid) {
+                        self.column_view.emit(ColumnViewInput::SelectGroup {
+                            uuid: group_uuid.clone(),
+                            name: group.name.clone(),
+                            group: group.clone(),
+                        });
+                        // Then select the entry
+                        self.column_view.emit(ColumnViewInput::SelectEntry {
+                            uuid: entry.uuid.clone(),
+                            entry,
                         });
                     }
                 }

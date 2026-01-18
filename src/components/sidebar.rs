@@ -36,7 +36,7 @@ impl Component for Sidebar {
         gtk4::ScrolledWindow {
             set_hscrollbar_policy: gtk4::PolicyType::Never,
             set_vscrollbar_policy: gtk4::PolicyType::Automatic,
-            set_width_request: 250,
+            set_vexpand: true,
 
             #[name = "list_box"]
             gtk4::ListBox {
@@ -81,8 +81,12 @@ impl Component for Sidebar {
                     widgets.list_box.remove(&row);
                 }
 
-                // Add root group and children
-                self.add_group_to_listbox(&widgets.list_box, &group, 0);
+                // Add children of root directly (skip the "Database" root itself)
+                for child in &group.children {
+                    self.add_group_to_listbox(&widgets.list_box, child, 0);
+                }
+                
+                // Also add root's entries as a "virtual" selection
                 self.root_group = Some(group);
             }
             SidebarInput::SelectGroup(uuid) => {
