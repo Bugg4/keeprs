@@ -1,0 +1,30 @@
+[package]
+name = "keeprs"
+version = "0.1.0"
+edition = "2021"
+description = "A minimalist KeePass database manager"
+license = "MIT"
+
+[dependencies]
+# GUI
+gtk4 = "0.9"
+relm4 = "0.9"
+
+# KeePass database handling
+keepass = { version = "0.7", features = ["save_kdbx4"] }
+
+# Config and serialization
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+dirs = "5.0"
+
+# Async runtime (for file operations)
+tokio = { version = "1", features = ["rt", "fs"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
