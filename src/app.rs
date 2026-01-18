@@ -2,7 +2,7 @@
 
 use crate::components::column_view::{ColumnView, ColumnViewInput, ColumnViewOutput};
 use crate::components::entry_edit::{EntryEdit, EntryEditInput, EntryEditOutput};
-use crate::components::search_bar::{SearchBar, SearchBarInput, SearchBarOutput};
+use crate::components::search_palette::{SearchPalette, SearchPaletteInput, SearchPaletteOutput};
 use crate::components::sidebar::{Sidebar, SidebarInput, SidebarOutput};
 use crate::components::unlock::{UnlockDialog, UnlockInput, UnlockOutput};
 use crate::config::Config;
@@ -10,6 +10,7 @@ use crate::database::KeepassDatabase;
 use crate::models::{Entry, Group};
 
 use gtk4::prelude::*;
+use gtk4::gdk;
 use relm4::prelude::*;
 use std::sync::Arc;
 use std::cell::RefCell;
@@ -46,6 +47,8 @@ pub enum AppInput {
     EntrySaved(Entry),
     /// Request to save the database.
     SaveDatabase,
+    /// Toggle search palette visibility.
+    ToggleSearch,
 }
 
 /// Main application model.
@@ -58,7 +61,7 @@ pub struct App {
 
     // Child components
     unlock: Controller<UnlockDialog>,
-    search_bar: Controller<SearchBar>,
+    search_palette: Controller<SearchPalette>,
     sidebar: Controller<Sidebar>,
     column_view: Controller<ColumnView>,
     entry_edit: Controller<EntryEdit>,
@@ -72,6 +75,7 @@ impl Component for App {
     type CommandOutput = ();
 
     view! {
+        #[name = "main_window"]
         gtk4::ApplicationWindow {
             set_title: Some("Keeprs"),
             set_default_width: 1100,
@@ -91,29 +95,31 @@ impl Component for App {
                     set_name: "unlock",
                 },
 
-                // Main view with sidebar and content
-                add_child = &gtk4::Paned {
-                    set_orientation: gtk4::Orientation::Horizontal,
-                    set_position: 280,
-                    set_shrink_start_child: false,
-                    set_shrink_end_child: false,
-
-                    // Left side: search bar + sidebar
+                // Main view with sidebar and content, wrapped in Overlay for search palette
+                add_child = &gtk4::Overlay {
                     #[wrap(Some)]
-                    set_start_child = &gtk4::Box {
-                        set_orientation: gtk4::Orientation::Vertical,
-                        set_vexpand: true,
+                    set_child = &gtk4::Paned {
+                        set_orientation: gtk4::Orientation::Horizontal,
+                        set_position: 280,
+                        set_shrink_start_child: false,
+                        set_shrink_end_child: false,
 
-                        // Search bar at top
-                        model.search_bar.widget().clone() {},
+                        // Left side: Sidebar (folder tree)
+                        #[wrap(Some)]
+                        set_start_child = &gtk4::Box {
+                            set_orientation: gtk4::Orientation::Vertical,
+                            set_vexpand: true,
+                            
+                            // Folder tree 
+                            model.sidebar.widget().clone() {},
+                        },
 
-                        // Folder tree below
-                        model.sidebar.widget().clone() {},
+                        // Right side: column view
+                        #[wrap(Some)]
+                        set_end_child = model.column_view.widget(),
                     },
 
-                    // Right side: column view
-                    #[wrap(Some)]
-                    set_end_child = model.column_view.widget(),
+                    add_overlay = model.search_palette.widget(),
                 } -> {
                     set_name: "main",
                 },
@@ -133,14 +139,19 @@ impl Component for App {
                 UnlockOutput::Unlocked(password) => AppInput::PasswordSubmitted(password),
             });
 
-        let search_bar = SearchBar::builder()
+        let search_palette = SearchPalette::builder()
             .launch(())
             .forward(sender.input_sender(), |output| match output {
-                SearchBarOutput::GroupSelected { uuid, name, group } => {
+                SearchPaletteOutput::GroupSelected { uuid, name, group } => {
                     AppInput::SearchGroupSelected { uuid, name, group }
                 }
-                SearchBarOutput::EntrySelected { entry, group_uuid } => {
+                SearchPaletteOutput::EntrySelected { uuid: _, entry, group_uuid } => {
                     AppInput::SearchEntrySelected { entry, group_uuid }
+                }
+                SearchPaletteOutput::Closed => {
+                    // Search closed, nothing to do specific here
+                    // Potentially focus return to main content?
+                    AppInput::SaveDatabase // No-op, just to match type
                 }
             });
 
@@ -172,13 +183,30 @@ impl Component for App {
             current_group_uuid: None,
             root_group: None,
             unlock,
-            search_bar,
+            search_palette,
             sidebar,
             column_view,
             entry_edit,
         };
 
         let widgets = view_output!();
+
+        // Register global keyboard shortcuts controller for the window
+        let key_controller = gtk4::EventControllerKey::new();
+        key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        
+        let sender_clone = sender.clone();
+        key_controller.connect_key_pressed(move |_, key, _keycode, state| {
+            // Check for Ctrl+P
+            if (key == gdk::Key::p || key == gdk::Key::P) 
+                && state.contains(gdk::ModifierType::CONTROL_MASK) {
+                sender_clone.input(AppInput::ToggleSearch);
+                return gtk4::glib::Propagation::Stop;
+            }
+            gtk4::glib::Propagation::Proceed
+        });
+        
+        widgets.main_window.add_controller(key_controller);
 
         // Start on unlock screen
         widgets.main_stack.set_visible_child_name("unlock");
@@ -205,7 +233,7 @@ impl Component for App {
 
                         // Populate sidebar and search
                         self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
-                        self.search_bar.emit(SearchBarInput::SetRootGroup(root.clone()));
+                        self.search_palette.emit(SearchPaletteInput::SetRootGroup(root.clone()));
 
                         // Set root group in column view
                         self.column_view.emit(ColumnViewInput::SetRootGroup(root.clone()));
@@ -224,6 +252,9 @@ impl Component for App {
             AppInput::DatabaseUnlocked => {
                 self.state = AppState::Unlocked;
                 widgets.main_stack.set_visible_child_name("main");
+            }
+            AppInput::ToggleSearch => {
+                self.search_palette.emit(SearchPaletteInput::Toggle);
             }
             AppInput::GroupSelected(uuid) => {
                 self.current_group_uuid = Some(uuid.clone());

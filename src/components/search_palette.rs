@@ -94,15 +94,17 @@ impl Component for SearchPalette {
             set_orientation: gtk4::Orientation::Vertical,
             set_halign: gtk4::Align::Center,
             set_valign: gtk4::Align::Start,
-            set_margin_top: 80,
-            set_width_request: 500,
+            set_margin_top: 60,
+            set_width_request: 600,
 
             #[watch]
             set_visible: model.visible,
 
-            // Search box container with shadow
-            gtk4::Frame {
-                add_css_class: "card",
+            // Search box container with shadow and background
+            gtk4::Box {
+                set_orientation: gtk4::Orientation::Vertical,
+                add_css_class: "popover", // Gives it the floating window look
+                add_css_class: "background", // Ensures opaque background
 
                 gtk4::Box {
                     set_orientation: gtk4::Orientation::Vertical,
@@ -186,6 +188,9 @@ impl Component for SearchPalette {
         match message {
             SearchPaletteInput::Show => {
                 self.visible = true;
+                // Manually set visibility
+                widgets.overlay.set_visible(true);
+                
                 self.query.clear();
                 self.results.clear();
                 self.selected_index = 0;
@@ -195,6 +200,9 @@ impl Component for SearchPalette {
             }
             SearchPaletteInput::Hide => {
                 self.visible = false;
+                // Manually set visibility
+                widgets.overlay.set_visible(false);
+                
                 let _ = sender.output(SearchPaletteOutput::Closed);
             }
             SearchPaletteInput::Toggle => {
@@ -227,7 +235,10 @@ impl Component for SearchPalette {
             }
             SearchPaletteInput::ConfirmSelection => {
                 if let Some(result) = self.results.get(self.selected_index) {
+                    // Hide immediately
                     self.visible = false;
+                    widgets.overlay.set_visible(false);
+                    
                     match result {
                         SearchResult::Group { uuid, name, .. } => {
                             if let Some(ref root) = self.root_group {
@@ -257,6 +268,7 @@ impl Component for SearchPalette {
             SearchPaletteInput::KeyPressed(key) => {
                 match key {
                     gdk::Key::Escape => {
+                        // Directly hide to avoid round-trip latency if possible
                         sender.input(SearchPaletteInput::Hide);
                     }
                     gdk::Key::Up => {
