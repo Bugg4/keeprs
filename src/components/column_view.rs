@@ -314,6 +314,11 @@ impl ColumnView {
             if let Some(ref selected) = self.selected_entry {
                 if entry.uuid == selected.uuid {
                     list_box.select_row(Some(&row));
+                    let row_clone = row.clone();
+                    gtk4::glib::idle_add_local(move || {
+                        row_clone.grab_focus();
+                        gtk4::glib::ControlFlow::Break
+                    });
                 }
             }
         }
