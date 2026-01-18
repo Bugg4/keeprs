@@ -49,6 +49,8 @@ pub enum AppInput {
     SaveDatabase,
     /// Toggle search palette visibility.
     ToggleSearch,
+    /// No operation.
+    NoOp,
 }
 
 /// Main application model.
@@ -149,9 +151,7 @@ impl Component for App {
                     AppInput::SearchEntrySelected { entry, group_uuid }
                 }
                 SearchPaletteOutput::Closed => {
-                    // Search closed, nothing to do specific here
-                    // Potentially focus return to main content?
-                    AppInput::SaveDatabase // No-op, just to match type
+                    AppInput::NoOp
                 }
             });
 
@@ -272,11 +272,18 @@ impl Component for App {
             }
             AppInput::SearchGroupSelected { uuid, name, group } => {
                 self.current_group_uuid = Some(uuid.clone());
+                // Highlight in sidebar
+                self.sidebar.emit(SidebarInput::UpdateSelection(uuid.clone()));
+                
                 self.column_view.emit(ColumnViewInput::SelectGroup { uuid, name, group });
             }
             AppInput::SearchEntrySelected { entry, group_uuid } => {
                 // Select the group first, then the entry
                 self.current_group_uuid = Some(group_uuid.clone());
+                
+                // Highlight in sidebar
+                self.sidebar.emit(SidebarInput::UpdateSelection(group_uuid.clone()));
+                
                 if let Some(ref root) = self.root_group {
                     if let Some(group) = find_group_by_uuid(root, &group_uuid) {
                         self.column_view.emit(ColumnViewInput::SelectGroup {
@@ -323,6 +330,7 @@ impl Component for App {
                     }
                 }
             }
+            AppInput::NoOp => {}
         }
     }
 }

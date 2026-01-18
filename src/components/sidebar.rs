@@ -9,8 +9,10 @@ use relm4::prelude::*;
 pub enum SidebarInput {
     /// Set the root group to display.
     SetRootGroup(Group),
-    /// A group was selected.
+    /// A group was selected (internal or external).
     SelectGroup(String),
+    /// Update visual selection (without emitting output).
+    UpdateSelection(String),
 }
 
 /// Output messages from the sidebar.
@@ -23,6 +25,7 @@ pub enum SidebarOutput {
 /// Sidebar model.
 pub struct Sidebar {
     root_group: Option<Group>,
+    selected_uuid: Option<String>,
 }
 
 #[relm4::component(pub)]
@@ -60,6 +63,7 @@ impl Component for Sidebar {
     ) -> ComponentParts<Self> {
         let model = Sidebar {
             root_group: None,
+            selected_uuid: None,
         };
 
         let widgets = view_output!();
@@ -86,17 +90,38 @@ impl Component for Sidebar {
                     self.add_group_to_listbox(&widgets.list_box, child, 0);
                 }
                 
-                // Also add root's entries as a "virtual" selection
                 self.root_group = Some(group);
             }
             SidebarInput::SelectGroup(uuid) => {
+                self.selected_uuid = Some(uuid.clone());
                 let _ = sender.output(SidebarOutput::GroupSelected(uuid));
+            }
+            SidebarInput::UpdateSelection(uuid) => {
+                self.selected_uuid = Some(uuid.clone());
+                // Find and select row
+                self.select_row_by_uuid(&widgets.list_box, &uuid);
             }
         }
     }
 }
 
 impl Sidebar {
+    fn select_row_by_uuid(&self, list_box: &gtk4::ListBox, uuid: &str) {
+         let row_name = format!("group-{}", uuid);
+         // Iterate children
+         let mut child = list_box.first_child();
+         while let Some(widget) = child {
+             if let Some(row) = widget.downcast_ref::<gtk4::ListBoxRow>() {
+                 if row.widget_name() == row_name {
+                     list_box.select_row(Some(row));
+                     row.grab_focus();
+                     return;
+                 }
+             }
+             child = widget.next_sibling();
+         }
+    }
+
     fn add_group_to_listbox(
         &self,
         list_box: &gtk4::ListBox,

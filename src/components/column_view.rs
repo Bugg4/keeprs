@@ -309,6 +309,13 @@ impl ColumnView {
 
             row.set_child(Some(&hbox));
             list_box.append(&row);
+
+            // Select if it matches selected entry
+            if let Some(ref selected) = self.selected_entry {
+                if entry.uuid == selected.uuid {
+                    list_box.select_row(Some(&row));
+                }
+            }
         }
 
         // Connect row activation
