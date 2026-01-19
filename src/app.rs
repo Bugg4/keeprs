@@ -197,6 +197,18 @@ impl Component for App {
 
         let widgets = view_output!();
 
+        // Load CSS
+        let provider = gtk4::CssProvider::new();
+        provider.load_from_data(include_str!("style.css"));
+        
+        if let Some(display) = gtk4::gdk::Display::default() {
+             gtk4::StyleContext::add_provider_for_display(
+                &display,
+                &provider,
+                gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+
         // Register global keyboard shortcuts controller for the window
         let key_controller = gtk4::EventControllerKey::new();
         key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
