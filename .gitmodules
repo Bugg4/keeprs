@@ -1,0 +1,3 @@
+[submodule "vendor/keepass"]
+	path = vendor/keepass
+	url = https://github.com/Bugg4/keepass-rs.git

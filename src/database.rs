@@ -62,7 +62,6 @@ impl KeepassDatabase {
         let mut custom_fields = std::collections::HashMap::new();
         let mut attachments = Vec::new();
 
-        let mut attachments = Vec::new();
         
         for (key, val) in &ke.fields {
             // Skip standard fields that are handled by specific getters
