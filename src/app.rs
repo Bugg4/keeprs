@@ -45,6 +45,8 @@ pub enum AppInput {
     AddEntry,
     /// Save attachment.
     SaveAttachment { filename: String, data: Vec<u8> },
+    /// Open attachment.
+    OpenAttachment { filename: String, data: Vec<u8> },
     /// Entry saved from edit dialog.
     EntrySaved(Entry),
     /// Request to save the database.
@@ -170,6 +172,7 @@ impl Component for App {
                 ColumnViewOutput::DeleteEntry(uuid) => AppInput::DeleteEntry(uuid),
                 ColumnViewOutput::AddEntry => AppInput::AddEntry,
                 ColumnViewOutput::SaveAttachment { filename, data } => AppInput::SaveAttachment { filename, data },
+                ColumnViewOutput::OpenAttachment { filename, data } => AppInput::OpenAttachment { filename, data },
             });
 
         let entry_edit = EntryEdit::builder()
@@ -356,6 +359,27 @@ impl Component for App {
                 });
                 
                 file_chooser.show();
+            }
+            AppInput::OpenAttachment { filename, data } => {
+                std::thread::spawn(move || {
+                    let temp_dir = std::env::temp_dir();
+                    let path = temp_dir.join(&filename);
+                    
+                    if let Err(e) = std::fs::write(&path, data) {
+                        tracing::error!("Failed to write temp file {}: {}", path.display(), e);
+                        return;
+                    }
+                    
+                    tracing::info!("Opening attachment: {}", path.display());
+                    
+                    // Use xdg-open on Linux
+                    if let Err(e) = std::process::Command::new("xdg-open")
+                        .arg(&path)
+                        .spawn() 
+                    {
+                        tracing::error!("Failed to open file {}: {}", path.display(), e);
+                    }
+                });
             }
             AppInput::SaveDatabase => {
                 if let Some(ref db) = self.database {

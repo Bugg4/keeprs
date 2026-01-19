@@ -34,6 +34,8 @@ pub enum ColumnViewInput {
     DeleteEntry,
     /// Save an attachment.
     SaveAttachment(String),
+    /// Open an attachment.
+    OpenAttachment(String),
 }
 
 /// Output messages from column view.
@@ -47,6 +49,8 @@ pub enum ColumnViewOutput {
     DeleteEntry(String),
     /// User wants to save an attachment.
     SaveAttachment { filename: String, data: Vec<u8> },
+    /// User wants to open an attachment.
+    OpenAttachment { filename: String, data: Vec<u8> },
 }
 
 /// Column view model.
@@ -194,6 +198,16 @@ impl Component for ColumnView {
                 if let Some(ref entry) = self.selected_entry {
                     if let Some(att) = entry.attachments.iter().find(|a| a.filename == filename) {
                         let _ = sender.output(ColumnViewOutput::SaveAttachment {
+                            filename: att.filename.clone(),
+                            data: att.data.clone(),
+                        });
+                    }
+                }
+            }
+            ColumnViewInput::OpenAttachment(filename) => {
+                if let Some(ref entry) = self.selected_entry {
+                    if let Some(att) = entry.attachments.iter().find(|a| a.filename == filename) {
+                        let _ = sender.output(ColumnViewOutput::OpenAttachment {
                             filename: att.filename.clone(),
                             data: att.data.clone(),
                         });
@@ -471,6 +485,16 @@ impl ColumnView {
                     sender_clone.input(ColumnViewInput::SaveAttachment(filename.clone()));
                 });
                 row.append(&save_btn);
+
+                let open_btn = gtk4::Button::from_icon_name("document-open-symbolic");
+                open_btn.add_css_class("flat");
+                open_btn.set_tooltip_text(Some("Open Attachment"));
+                let filename = att.filename.clone();
+                let sender_clone = sender.clone();
+                open_btn.connect_clicked(move |_| {
+                    sender_clone.input(ColumnViewInput::OpenAttachment(filename.clone()));
+                });
+                row.append(&open_btn);
 
                 att_box.append(&row);
             }

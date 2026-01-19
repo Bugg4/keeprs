@@ -23,6 +23,7 @@ fuzzy-matcher = "0.3"
 
 # Async runtime (for file operations)
 tokio = { version = "1", features = ["rt", "fs"] }
+tempfile = "3"
 
 # Error handling
 anyhow = "1.0"
