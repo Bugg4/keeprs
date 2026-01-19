@@ -111,6 +111,7 @@ impl KeepassDatabase {
             url: ke.get_url().unwrap_or_default().to_string(),
             notes: ke.get("Notes").unwrap_or_default().to_string(),
             custom_fields,
+            otp: ke.get_raw_otp_value().map(|s| s.to_string()),
             attachments,
         }
     }

@@ -21,6 +21,7 @@ pub struct Entry {
     pub url: String,
     pub notes: String,
     pub custom_fields: HashMap<String, String>,
+    pub otp: Option<String>,
     pub attachments: Vec<Attachment>,
 }
 

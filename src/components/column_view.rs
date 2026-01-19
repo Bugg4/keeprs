@@ -6,7 +6,11 @@
 use crate::models::{Entry, Group, NavigationPath, NavigationStep};
 use gtk4::prelude::*;
 use gtk4::gdk;
+use gtk4::glib;
+use gtk4::cairo::Context;
+use keepass::db::TOTP;
 use relm4::prelude::*;
+use std::rc::Rc;
 
 /// Minimum width for each column.
 const COLUMN_MIN_WIDTH: i32 = 250;
@@ -431,6 +435,105 @@ impl ColumnView {
                 "••••••••".to_string()
             };
             self.add_field_row(&details_box, "Password", &display_value, true, Some(&entry.password), sender);
+        }
+
+        if let Some(otp_uri) = &entry.otp {
+            if let Ok(totp) = otp_uri.parse::<TOTP>() {
+                if let Ok(code) = totp.value_now() {
+                    // Wrap TOTP in Rc to share with closures
+                    let totp = Rc::new(totp);
+
+                    // Custom TOTP Row with Animation
+                    let row = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+
+                    let label_widget = gtk4::Label::new(Some("TOTP"));
+                    label_widget.add_css_class("dim-label");
+                    label_widget.set_halign(gtk4::Align::Start);
+                    row.append(&label_widget);
+
+                    let value_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+
+                    let code_label = gtk4::Label::new(None);
+                    code_label.set_halign(gtk4::Align::Start);
+                    code_label.set_hexpand(true);
+                    code_label.set_selectable(true);
+                    code_label.set_markup(&format!("<span font_family=\"monospace\" size=\"large\">{}</span>", code.code));
+                    value_row.append(&code_label);
+
+                    // Drawing Area for Progress
+                    let drawing_area = gtk4::DrawingArea::new();
+                    drawing_area.set_content_width(24);
+                    drawing_area.set_content_height(24);
+                    drawing_area.set_margin_end(8);
+
+                    let totp_draw = totp.clone();
+                    drawing_area.set_draw_func(move |_area: &gtk4::DrawingArea, cr: &Context, width: i32, height: i32| {
+                        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                        let period = totp_draw.period;
+                        // Avoid division by zero
+                        if period == 0 { return; }
+                        
+                        let remaining = period - (now % period);
+                        let progress = remaining as f64 / period as f64;
+
+                        let center_x = width as f64 / 2.0;
+                        let center_y = height as f64 / 2.0;
+                        let radius = f64::min(center_x, center_y) - 2.0;
+                        let start_angle = -std::f64::consts::PI / 2.0;
+
+                        // Background (light gray)
+                        cr.set_source_rgba(0.8, 0.8, 0.8, 0.5);
+                        cr.set_line_width(3.0);
+                        cr.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
+                        cr.stroke().expect("Invalid cairo surface state");
+
+                        // Progress (blue)
+                        cr.set_source_rgba(0.2, 0.6, 1.0, 1.0);
+                        let end_angle = start_angle + (2.0 * std::f64::consts::PI * progress);
+                        cr.arc(center_x, center_y, radius, start_angle, end_angle);
+                        cr.stroke().expect("Invalid cairo surface state");
+                    });
+                    value_row.append(&drawing_area);
+
+                    // Copy Button
+                    let copy_btn = gtk4::Button::from_icon_name("edit-copy-symbolic");
+                    copy_btn.add_css_class("flat");
+                    copy_btn.set_tooltip_text(Some("Copy to clipboard"));
+                    let totp_copy = totp.clone();
+                    let sender_clone = sender.clone();
+                    copy_btn.connect_clicked(move |_| {
+                        if let Ok(code) = totp_copy.value_now() {
+                            sender_clone.input(ColumnViewInput::CopyField(code.code));
+                        }
+                    });
+                    value_row.append(&copy_btn);
+
+                    row.append(&value_row);
+                    details_box.append(&row);
+
+                    // Timer to update UI
+                    let totp_timer = totp.clone();
+                    glib::timeout_add_local(
+                        std::time::Duration::from_millis(100),
+                        glib::clone!(@weak code_label, @weak drawing_area => @default-return glib::ControlFlow::Break, move || {
+                            if let Ok(code) = totp_timer.value_now() {
+                                // Update Text if changed
+                                // We check plain text vs code to avoid resetting markup if not needed, 
+                                // but retrieving text from markup label returns plain text.
+                                let current_text = code_label.text();
+                                if current_text.as_str() != code.code {
+                                    code_label.set_markup(&format!("<span font_family=\"monospace\" size=\"large\">{}</span>", code.code));
+                                }
+                                
+                                // Trigger redraw
+                                drawing_area.queue_draw();
+                            }
+                            glib::ControlFlow::Continue
+                        })
+                    );
+                }
+            }
+
         }
 
         if !entry.url.is_empty() {
