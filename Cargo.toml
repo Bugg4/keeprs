@@ -11,7 +11,7 @@ gtk4 = "0.9"
 relm4 = "0.9"
 
 # KeePass database handling
-keepass = { version = "0.7", features = ["save_kdbx4"] }
+keepass = { path = "vendor/keepass", features = ["save_kdbx4"] }
 
 # Config and serialization
 toml = "0.8"

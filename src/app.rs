@@ -43,6 +43,8 @@ pub enum AppInput {
     EditEntry(Entry),
     DeleteEntry(String),
     AddEntry,
+    /// Save attachment.
+    SaveAttachment { filename: String, data: Vec<u8> },
     /// Entry saved from edit dialog.
     EntrySaved(Entry),
     /// Request to save the database.
@@ -167,6 +169,7 @@ impl Component for App {
                 ColumnViewOutput::EditEntry(entry) => AppInput::EditEntry(entry),
                 ColumnViewOutput::DeleteEntry(uuid) => AppInput::DeleteEntry(uuid),
                 ColumnViewOutput::AddEntry => AppInput::AddEntry,
+                ColumnViewOutput::SaveAttachment { filename, data } => AppInput::SaveAttachment { filename, data },
             });
 
         let entry_edit = EntryEdit::builder()
@@ -322,6 +325,37 @@ impl Component for App {
                 if let Some(ref group_uuid) = self.current_group_uuid {
                     sender.input(AppInput::GroupSelected(group_uuid.clone()));
                 }
+            }
+            AppInput::SaveAttachment { filename, data } => {
+                let file_chooser = gtk4::FileChooserNative::new(
+                    Some("Save Attachment"),
+                    Some(&widgets.main_window),
+                    gtk4::FileChooserAction::Save,
+                    Some("Save"),
+                    Some("Cancel"),
+                );
+                
+                file_chooser.set_current_name(&filename);
+                
+                file_chooser.connect_response(move |dialog, response| {
+                    if response == gtk4::ResponseType::Accept {
+                        if let Some(file) = dialog.file() {
+                             if let Some(path) = file.path() {
+                                 let data = data.clone();
+                                 std::thread::spawn(move || {
+                                     if let Err(e) = std::fs::write(&path, data) {
+                                         tracing::error!("Failed to save attachment to {}: {}", path.display(), e);
+                                     } else {
+                                         tracing::info!("Saved attachment to {}", path.display());
+                                     }
+                                 });
+                             }
+                        }
+                    }
+                    dialog.destroy();
+                });
+                
+                file_chooser.show();
             }
             AppInput::SaveDatabase => {
                 if let Some(ref db) = self.database {

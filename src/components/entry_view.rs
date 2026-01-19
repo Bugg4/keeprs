@@ -26,6 +26,8 @@ pub enum EntryViewInput {
     AddEntry,
     /// Clear the view.
     Clear,
+    /// Save an attachment.
+    SaveAttachment(String),
 }
 
 /// Output messages from entry view.
@@ -37,6 +39,8 @@ pub enum EntryViewOutput {
     DeleteEntry(String),
     /// User wants to add a new entry.
     AddEntry,
+    /// User wants to save an attachment.
+    SaveAttachment { filename: String, data: Vec<u8> },
 }
 
 /// Entry view model.
@@ -219,6 +223,16 @@ impl Component for EntryView {
                     widgets.entry_list.remove(&row);
                 }
             }
+            EntryViewInput::SaveAttachment(filename) => {
+                if let Some(ref entry) = self.selected_entry {
+                    if let Some(att) = entry.attachments.iter().find(|a| a.filename == filename) {
+                        let _ = sender.output(EntryViewOutput::SaveAttachment {
+                            filename: att.filename.clone(),
+                            data: att.data.clone(),
+                        });
+                    }
+                }
+            }
         }
     }
 }
@@ -309,6 +323,47 @@ impl EntryView {
             notes_text.set_wrap(true);
             notes_text.set_selectable(true);
             widgets.detail_box.append(&notes_text);
+        }
+
+        if !entry.attachments.is_empty() {
+            let att_label = gtk4::Label::new(Some("Attachments"));
+            att_label.add_css_class("dim-label");
+            att_label.set_halign(gtk4::Align::Start);
+            att_label.set_margin_top(12);
+            widgets.detail_box.append(&att_label);
+
+            let att_box = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+            
+            for att in &entry.attachments {
+                let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+                
+                let icon = gtk4::Image::from_icon_name("mail-attachment-symbolic");
+                row.append(&icon);
+
+                let name_label = gtk4::Label::new(Some(&att.filename));
+                name_label.set_hexpand(true);
+                name_label.set_halign(gtk4::Align::Start);
+                row.append(&name_label);
+
+                // Size
+                let size_kb = att.data.len() as f64 / 1024.0;
+                let size_label = gtk4::Label::new(Some(&format!("{:.1} KB", size_kb)));
+                size_label.add_css_class("dim-label");
+                row.append(&size_label);
+
+                let save_btn = gtk4::Button::from_icon_name("document-save-symbolic");
+                save_btn.add_css_class("flat");
+                save_btn.set_tooltip_text(Some("Save Attachment"));
+                let filename = att.filename.clone();
+                let sender_clone = sender.clone();
+                save_btn.connect_clicked(move |_| {
+                    sender_clone.input(EntryViewInput::SaveAttachment(filename.clone()));
+                });
+                row.append(&save_btn);
+
+                att_box.append(&row);
+            }
+            widgets.detail_box.append(&att_box);
         }
     }
 

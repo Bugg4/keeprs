@@ -21,6 +21,15 @@ pub struct Entry {
     pub url: String,
     pub notes: String,
     pub custom_fields: HashMap<String, String>,
+    pub attachments: Vec<Attachment>,
+}
+
+/// Represents a binary attachment.
+#[derive(Debug, Clone)]
+pub struct Attachment {
+    pub filename: String,
+    pub mime_type: Option<String>,
+    pub data: Vec<u8>,
 }
 
 impl Entry {

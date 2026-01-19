@@ -57,7 +57,53 @@ impl KeepassDatabase {
     }
 
     /// Convert a keepass::Entry to our Entry model.
+    /// Convert a keepass::Entry to our Entry model.
     fn convert_entry(&self, ke: &keepass::db::Entry) -> Entry {
+        let mut custom_fields = std::collections::HashMap::new();
+        let mut attachments = Vec::new();
+
+        let mut attachments = Vec::new();
+        
+        for (key, val) in &ke.fields {
+            // Skip standard fields that are handled by specific getters
+            if matches!(key.as_str(), "Title" | "UserName" | "Password" | "URL" | "Notes") {
+                continue;
+            }
+
+            match val {
+                keepass::db::Value::Bytes(bytes) => {
+                    attachments.push(crate::models::Attachment {
+                        filename: key.clone(),
+                        mime_type: None, 
+                        data: bytes.clone(),
+                    });
+                }
+                keepass::db::Value::BinaryRef(ref_id) => {
+                    if let Ok(index) = ref_id.parse::<usize>() {
+                        if let Some(att) = self.db.header_attachments.get(index) {
+                            attachments.push(crate::models::Attachment {
+                                filename: key.clone(),
+                                mime_type: None, 
+                                data: att.content.clone(),
+                            });
+                        } else {
+                            tracing::warn!("Attachment reference {} not found in header", index);
+                        }
+                    } else {
+                        tracing::warn!("Invalid attachment reference format: {}", ref_id);
+                    }
+                }
+                keepass::db::Value::Unprotected(s) => {
+                    custom_fields.insert(key.clone(), s.clone());
+                }
+                keepass::db::Value::Protected(_) => {
+                    if let Some(s) = ke.get(key) {
+                        custom_fields.insert(key.clone(), s.to_string());
+                    }
+                }
+            }
+        }
+
         Entry {
             uuid: ke.uuid.to_string(),
             title: ke.get_title().unwrap_or_default().to_string(),
@@ -65,7 +111,8 @@ impl KeepassDatabase {
             password: ke.get_password().unwrap_or_default().to_string(),
             url: ke.get_url().unwrap_or_default().to_string(),
             notes: ke.get("Notes").unwrap_or_default().to_string(),
-            custom_fields: std::collections::HashMap::new(),
+            custom_fields,
+            attachments,
         }
     }
 
