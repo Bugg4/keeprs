@@ -467,10 +467,10 @@ impl ColumnView {
                     drawing_area.set_margin_end(8);
 
                     let totp_draw = totp.clone();
+                    let totp_draw = totp.clone();
                     drawing_area.set_draw_func(move |_area: &gtk4::DrawingArea, cr: &Context, width: i32, height: i32| {
                         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
                         let period = totp_draw.period;
-                        // Avoid division by zero
                         if period == 0 { return; }
                         
                         let remaining = period - (now % period);
@@ -478,20 +478,22 @@ impl ColumnView {
 
                         let center_x = width as f64 / 2.0;
                         let center_y = height as f64 / 2.0;
-                        let radius = f64::min(center_x, center_y) - 2.0;
-                        let start_angle = -std::f64::consts::PI / 2.0;
+                        let radius = f64::min(center_x, center_y);
 
-                        // Background (light gray)
-                        cr.set_source_rgba(0.8, 0.8, 0.8, 0.5);
-                        cr.set_line_width(3.0);
+                        // Background Circle (Light Gray)
+                        cr.set_source_rgba(0.85, 0.85, 0.85, 1.0);
                         cr.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
-                        cr.stroke().expect("Invalid cairo surface state");
+                        cr.fill().expect("Invalid cairo surface state");
 
-                        // Progress (blue)
+                        // Progress Pie (Blue)
                         cr.set_source_rgba(0.2, 0.6, 1.0, 1.0);
+                        cr.move_to(center_x, center_y);
+                        // Rotate -90 degrees (start at top)
+                        let start_angle = -std::f64::consts::PI / 2.0;
                         let end_angle = start_angle + (2.0 * std::f64::consts::PI * progress);
                         cr.arc(center_x, center_y, radius, start_angle, end_angle);
-                        cr.stroke().expect("Invalid cairo surface state");
+                        cr.close_path();
+                        cr.fill().expect("Invalid cairo surface state");
                     });
                     value_row.append(&drawing_area);
 
