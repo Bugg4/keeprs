@@ -6,9 +6,11 @@ A modern, fast, and native KeePass client for Linux, built with **Rust**, **GTK4
 
 ## Features
 
-- **KeePass Support**: Full support for `.kdbx` databases (KeePass 4.x).
-- **Floating Search Palette**: VSCode-style fuzzy search (`Ctrl+P`) for lightning-fast navigation.
-- **Miller Columns**: Navigate your folder hierarchy effortlessly with a column-based view.
+- **Collapsible Tree Sidebar**: Fully interactive folder tree with visual hierarchy lines, expand/collapse toggles, and auto-sync with search results.
+- **Floating Search Palette**: VSCode-style fuzzy search (`Ctrl+P`) for lightning-fast navigation to any entry or group.
+- **Entry Management**: Complete view and edit capabilities for entries, including username, password, URL, notes, and custom fields.
+- **Attachments Support**: Securely view and download binary attachments stored within your database.
+- **TOTP Integration**: Built-in TOTP generator with a visual countdown timer for two-factor authentication codes.
 
 ## Installation
 
@@ -43,7 +45,7 @@ Keeprs looks for a config file at `~/.config/keeprs/keeprs.toml`:
 database_path = "/path/to/your/database.kdbx"
 
 [keybindings]
-search = "<Control>p"
+search = "ctrl+p"
 ```
 
 ## License
