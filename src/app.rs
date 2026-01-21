@@ -107,7 +107,9 @@ impl Component for App {
                     set_child = &gtk4::Paned {
                         set_orientation: gtk4::Orientation::Horizontal,
                         set_position: 280,
-                        set_shrink_start_child: false,
+                        set_shrink_start_child: true,
+                        set_resize_start_child: false,
+                        set_resize_end_child: true,
                         set_shrink_end_child: false,
 
                         // Left side: Sidebar (folder tree)
