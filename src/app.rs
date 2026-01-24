@@ -225,6 +225,8 @@ impl Component for App {
             );
         }
 
+
+
         // Register global keyboard shortcuts controller for the window
         let key_controller = gtk4::EventControllerKey::new();
         key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);

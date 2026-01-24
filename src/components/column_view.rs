@@ -108,7 +108,6 @@ impl Component for ColumnView {
                 set_orientation: gtk4::Orientation::Horizontal,
                 set_spacing: 4,
                 set_margin_all: 8,
-                add_css_class: "toolbar",
 
                 #[watch]
                 set_visible: model.nav_path.depth() > 0,
@@ -354,7 +353,6 @@ impl ColumnView {
         // Toolbar
         let toolbar = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
         toolbar.set_margin_all(8);
-        toolbar.add_css_class("toolbar");
 
         let add_btn = gtk4::Button::from_icon_name("list-add-symbolic");
         add_btn.add_css_class("flat");
@@ -374,7 +372,6 @@ impl ColumnView {
         scrolled.set_hscrollbar_policy(gtk4::PolicyType::Never);
 
         let list_box = gtk4::ListBox::new();
-        list_box.add_css_class("boxed-list");
         list_box.set_selection_mode(gtk4::SelectionMode::Single);
         list_box.set_margin_all(8);
 
@@ -456,7 +453,6 @@ impl ColumnView {
         // Toolbar
         let toolbar = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
         toolbar.set_margin_all(8);
-        toolbar.add_css_class("toolbar");
 
         if self.editing {
             // Edit mode: Save and Cancel buttons

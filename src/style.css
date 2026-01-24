@@ -5,16 +5,27 @@
     min-height: 0px;
 }
 
+/* Make containers use theme background */
+.navigation-sidebar {
+    background: transparent;
+}
+
+scrolledwindow > viewport {
+    background: transparent;
+}
+
+list {
+    background: transparent;
+}
+
 /* Search palette styling */
 .search-palette {
     border-radius: 12px;
     border: 2px solid @accent_bg_color;
-    overflow: hidden;
 }
 
 .search-palette > box {
     border-radius: 10px;
-    overflow: hidden;
 }
 
 .search-palette searchentry {
