@@ -3,7 +3,7 @@
 use crate::components::column_view::{ColumnView, ColumnViewInput, ColumnViewOutput};
 use crate::components::entry_edit::{EntryEdit, EntryEditInput, EntryEditOutput};
 use crate::components::search_palette::{SearchPalette, SearchPaletteInput, SearchPaletteOutput};
-use crate::components::sidebar::{Sidebar, SidebarInput, SidebarOutput};
+use crate::components::sidebar::{Sidebar, SidebarInit, SidebarInput, SidebarOutput};
 use crate::components::unlock::{UnlockDialog, UnlockInput, UnlockOutput};
 use crate::config::Config;
 use crate::database::KeepassDatabase;
@@ -30,11 +30,14 @@ pub enum AppInput {
     /// Password submitted from unlock dialog.
     PasswordSubmitted(String),
     /// Unlock failed with error.
-    UnlockFailed(String),
+    // UnlockFailed(String), // Unused
     /// Database unlocked successfully.
-    DatabaseUnlocked,
+    /// Database unlocked successfully.
+    // DatabaseUnlocked, // Unused
     /// Group selected in sidebar.
     GroupSelected(String),
+    /// Entry selected in sidebar.
+    SidebarEntrySelected(String),
     /// Group selected from search with full data.
     SearchGroupSelected { uuid: String, name: String, group: Group },
     /// Entry selected from search.
@@ -104,11 +107,11 @@ impl Component for App {
                 // Main view with sidebar and content, wrapped in Overlay for search palette
                 add_child = &gtk4::Overlay {
                     #[wrap(Some)]
+                    #[name = "main_paned"]
                     set_child = &gtk4::Paned {
                         set_orientation: gtk4::Orientation::Horizontal,
-                        set_position: 280,
-                        set_shrink_start_child: true,
-                        set_resize_start_child: false,
+                        set_shrink_start_child: false, // Enforce minimum width
+                        set_resize_start_child: true, // Allow manual resizing
                         set_resize_end_child: true,
                         set_shrink_end_child: false,
 
@@ -161,10 +164,21 @@ impl Component for App {
                 }
             });
 
+        tracing::info!("Initializing Sidebar with initial_width: {}, min_width: {}", config.sidebar_initial_width, config.sidebar_min_width);
         let sidebar = Sidebar::builder()
-            .launch(())
+            .launch(SidebarInit {
+                initial_width: config.sidebar_initial_width,
+                min_width: config.sidebar_min_width,
+            })
             .forward(sender.input_sender(), |output| match output {
                 SidebarOutput::GroupSelected(uuid) => AppInput::GroupSelected(uuid),
+                SidebarOutput::EntrySelected(uuid) => {
+                    // We need to find the parent group UUID for this entry
+                    // Since we can't easily query the model here without access to it, 
+                    // we'll pass a special message or handle it in update() if we passed more info.
+                    // Actually, let's just use a new AppInput that does the lookup.
+                    AppInput::SidebarEntrySelected(uuid)
+                }
             });
 
         let column_view = ColumnView::builder()
@@ -204,7 +218,7 @@ impl Component for App {
         provider.load_from_data(include_str!("style.css"));
         
         if let Some(display) = gtk4::gdk::Display::default() {
-             gtk4::StyleContext::add_provider_for_display(
+             gtk4::style_context_add_provider_for_display(
                 &display,
                 &provider,
                 gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
@@ -227,6 +241,10 @@ impl Component for App {
         });
         
         widgets.main_window.add_controller(key_controller);
+
+        // Set initial sidebar width from config
+        widgets.main_paned.set_position(model.config.sidebar_initial_width);
+        tracing::info!("Set main_paned position to: {}", model.config.sidebar_initial_width);
 
         // Start on unlock screen
         widgets.main_stack.set_visible_child_name("unlock");
@@ -269,13 +287,7 @@ impl Component for App {
                     }
                 }
             }
-            AppInput::UnlockFailed(error) => {
-                self.unlock.emit(UnlockInput::ShowError(error));
-            }
-            AppInput::DatabaseUnlocked => {
-                self.state = AppState::Unlocked;
-                widgets.main_stack.set_visible_child_name("main");
-            }
+
             AppInput::ToggleSearch => {
                 self.search_palette.emit(SearchPaletteInput::Toggle);
             }
@@ -429,6 +441,17 @@ impl Component for App {
                     }
                 }
             }
+            AppInput::SidebarEntrySelected(entry_uuid) => {
+                // Find parent group and entry
+                if let Some(ref root) = self.root_group {
+                    if let Some((group, entry)) = find_entry_and_group(root, &entry_uuid) {
+                        sender.input(AppInput::SearchEntrySelected {
+                            entry: entry.clone(),
+                            group_uuid: group.uuid.clone(),
+                        });
+                    }
+                }
+            }
             AppInput::NoOp => {}
         }
     }
@@ -441,6 +464,21 @@ fn find_group_by_uuid<'a>(group: &'a Group, uuid: &str) -> Option<&'a Group> {
     }
     for child in &group.children {
         if let Some(found) = find_group_by_uuid(child, uuid) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Find an entry and its parent group by entry UUID.
+fn find_entry_and_group<'a>(group: &'a Group, entry_uuid: &str) -> Option<(&'a Group, &'a Entry)> {
+    for entry in &group.entries {
+        if entry.uuid == entry_uuid {
+            return Some((group, entry));
+        }
+    }
+    for child in &group.children {
+        if let Some(found) = find_entry_and_group(child, entry_uuid) {
             return Some(found);
         }
     }

@@ -73,7 +73,7 @@ impl KeepassDatabase {
                 keepass::db::Value::Bytes(bytes) => {
                     attachments.push(crate::models::Attachment {
                         filename: key.clone(),
-                        mime_type: None, 
+                        _mime_type: None, 
                         data: bytes.clone(),
                     });
                 }
@@ -82,7 +82,7 @@ impl KeepassDatabase {
                         if let Some(att) = self.db.header_attachments.get(index) {
                             attachments.push(crate::models::Attachment {
                                 filename: key.clone(),
-                                mime_type: None, 
+                                _mime_type: None, 
                                 data: att.content.clone(),
                             });
                         } else {

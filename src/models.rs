@@ -29,7 +29,7 @@ pub struct Entry {
 #[derive(Debug, Clone)]
 pub struct Attachment {
     pub filename: String,
-    pub mime_type: Option<String>,
+    pub _mime_type: Option<String>,
     pub data: Vec<u8>,
 }
 
@@ -44,9 +44,9 @@ impl Entry {
 #[derive(Debug, Clone)]
 pub enum NavigationStep {
     /// A group/folder was selected.
-    Group { uuid: String, name: String },
+    Group { _uuid: String, name: String },
     /// An entry was selected.
-    Entry { uuid: String, title: String },
+    Entry { _uuid: String, title: String },
 }
 
 /// Navigation path tracking the current drill-down state.
@@ -64,12 +64,12 @@ impl NavigationPath {
 
     /// Add a group selection to the path.
     pub fn push_group(&mut self, uuid: String, name: String) {
-        self.steps.push(NavigationStep::Group { uuid, name });
+        self.steps.push(NavigationStep::Group { _uuid: uuid, name });
     }
 
     /// Add an entry selection to the path.
     pub fn push_entry(&mut self, uuid: String, title: String) {
-        self.steps.push(NavigationStep::Entry { uuid, title });
+        self.steps.push(NavigationStep::Entry { _uuid: uuid, title });
     }
 
     /// Truncate the path to the given depth (0 = clear all).

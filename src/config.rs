@@ -11,12 +11,28 @@ use std::path::PathBuf;
 pub struct Config {
     /// Path to the KeePass database file.
     pub database_path: PathBuf,
+    /// Initial width for the sidebar on startup.
+    #[serde(default = "default_sidebar_initial_width")]
+    pub sidebar_initial_width: i32,
+    /// Minimum width the sidebar can be shrunk to.
+    #[serde(default = "default_sidebar_min_width")]
+    pub sidebar_min_width: i32,
+}
+
+fn default_sidebar_initial_width() -> i32 {
+    280
+}
+
+fn default_sidebar_min_width() -> i32 {
+    150
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             database_path: PathBuf::from("database.kdbx"),
+            sidebar_initial_width: default_sidebar_initial_width(),
+            sidebar_min_width: default_sidebar_min_width(),
         }
     }
 }
@@ -32,14 +48,18 @@ impl Config {
             // Create default config
             let config = Config::default();
             config.save()?;
+            tracing::info!("Created default config: {:?}", config);
             return Ok(config);
         }
 
         let contents = std::fs::read_to_string(&config_path)
             .with_context(|| format!("Failed to read config file: {}", config_path.display()))?;
 
-        toml::from_str(&contents)
-            .with_context(|| format!("Failed to parse config file: {}", config_path.display()))
+        let config: Config = toml::from_str(&contents)
+            .with_context(|| format!("Failed to parse config file: {}", config_path.display()))?;
+        
+        tracing::info!("Loaded config from {}: {:?}", config_path.display(), config);
+        Ok(config)
     }
 
     /// Save configuration to the config file.

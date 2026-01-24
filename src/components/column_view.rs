@@ -467,7 +467,7 @@ impl ColumnView {
                     drawing_area.set_margin_end(8);
 
                     let totp_draw = totp.clone();
-                    let totp_draw = totp.clone();
+
                     drawing_area.set_draw_func(move |_area: &gtk4::DrawingArea, cr: &Context, width: i32, height: i32| {
                         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
                         let period = totp_draw.period;
