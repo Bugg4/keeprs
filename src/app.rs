@@ -184,7 +184,7 @@ impl Component for App {
         let column_view = ColumnView::builder()
             .launch(())
             .forward(sender.input_sender(), |output| match output {
-                ColumnViewOutput::EditEntry(entry) => AppInput::EditEntry(entry),
+                ColumnViewOutput::EntryEdited(entry) => AppInput::EntrySaved(entry),
                 ColumnViewOutput::DeleteEntry(uuid) => AppInput::DeleteEntry(uuid),
                 ColumnViewOutput::AddEntry => AppInput::AddEntry,
                 ColumnViewOutput::SaveAttachment { filename, data } => AppInput::SaveAttachment { filename, data },

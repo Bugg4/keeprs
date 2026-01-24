@@ -32,7 +32,7 @@ pub enum ColumnViewInput {
     CopyField(String),
     /// Add new entry.
     AddEntry,
-    /// Edit current entry.
+    /// Edit current entry (enter inline edit mode).
     EditEntry,
     /// Delete current entry.
     DeleteEntry,
@@ -40,6 +40,20 @@ pub enum ColumnViewInput {
     SaveAttachment(String),
     /// Open an attachment.
     OpenAttachment(String),
+    /// Enter inline edit mode.
+    EnterEditMode,
+    /// Exit edit mode (true = save, false = cancel).
+    ExitEditMode(bool),
+    /// Edit title field.
+    EditTitle(String),
+    /// Edit username field.
+    EditUsername(String),
+    /// Edit password field.
+    EditPassword(String),
+    /// Edit URL field.
+    EditUrl(String),
+    /// Edit notes field.
+    EditNotes(String),
 }
 
 /// Output messages from column view.
@@ -47,14 +61,14 @@ pub enum ColumnViewInput {
 pub enum ColumnViewOutput {
     /// User wants to add an entry.
     AddEntry,
-    /// User wants to edit an entry.
-    EditEntry(Entry),
     /// User wants to delete an entry.
     DeleteEntry(String),
     /// User wants to save an attachment.
     SaveAttachment { filename: String, data: Vec<u8> },
     /// User wants to open an attachment.
     OpenAttachment { filename: String, data: Vec<u8> },
+    /// Entry was edited inline and saved.
+    EntryEdited(Entry),
 }
 
 /// Column view model.
@@ -69,6 +83,10 @@ pub struct ColumnView {
     selected_entry: Option<Entry>,
     /// Password visibility state.
     password_visible: bool,
+    /// Whether we are in inline edit mode.
+    editing: bool,
+    /// Entry being edited (holds uncommitted changes).
+    edited_entry: Option<Entry>,
 }
 
 #[relm4::component(pub)]
@@ -128,6 +146,8 @@ impl Component for ColumnView {
             current_entries: Vec::new(),
             selected_entry: None,
             password_visible: false,
+            editing: false,
+            edited_entry: None,
         };
 
         let widgets = view_output!();
@@ -153,6 +173,8 @@ impl Component for ColumnView {
                 self.current_entries = group.entries.clone();
                 self.selected_entry = None;
                 self.password_visible = false;
+                self.editing = false;
+                self.edited_entry = None;
                 self.rebuild_columns(widgets, &sender);
             }
             ColumnViewInput::SelectEntry { uuid, entry } => {
@@ -160,6 +182,8 @@ impl Component for ColumnView {
                 self.nav_path.push_entry(uuid, entry.title.clone());
                 self.selected_entry = Some(entry);
                 self.password_visible = false;
+                self.editing = false;
+                self.edited_entry = None;
                 self.rebuild_columns(widgets, &sender);
             }
             ColumnViewInput::NavigateToDepth(depth) => {
@@ -189,8 +213,55 @@ impl Component for ColumnView {
                 let _ = sender.output(ColumnViewOutput::AddEntry);
             }
             ColumnViewInput::EditEntry => {
+                // Enter inline edit mode
                 if let Some(ref entry) = self.selected_entry {
-                    let _ = sender.output(ColumnViewOutput::EditEntry(entry.clone()));
+                    self.editing = true;
+                    self.edited_entry = Some(entry.clone());
+                    self.rebuild_columns(widgets, &sender);
+                }
+            }
+            ColumnViewInput::EnterEditMode => {
+                if let Some(ref entry) = self.selected_entry {
+                    self.editing = true;
+                    self.edited_entry = Some(entry.clone());
+                    self.rebuild_columns(widgets, &sender);
+                }
+            }
+            ColumnViewInput::ExitEditMode(save) => {
+                if save {
+                    if let Some(ref edited) = self.edited_entry {
+                        // Update selected_entry with edits
+                        self.selected_entry = Some(edited.clone());
+                        let _ = sender.output(ColumnViewOutput::EntryEdited(edited.clone()));
+                    }
+                }
+                self.editing = false;
+                self.edited_entry = None;
+                self.rebuild_columns(widgets, &sender);
+            }
+            ColumnViewInput::EditTitle(title) => {
+                if let Some(ref mut entry) = self.edited_entry {
+                    entry.title = title;
+                }
+            }
+            ColumnViewInput::EditUsername(username) => {
+                if let Some(ref mut entry) = self.edited_entry {
+                    entry.username = username;
+                }
+            }
+            ColumnViewInput::EditPassword(password) => {
+                if let Some(ref mut entry) = self.edited_entry {
+                    entry.password = password;
+                }
+            }
+            ColumnViewInput::EditUrl(url) => {
+                if let Some(ref mut entry) = self.edited_entry {
+                    entry.url = url;
+                }
+            }
+            ColumnViewInput::EditNotes(notes) => {
+                if let Some(ref mut entry) = self.edited_entry {
+                    entry.notes = notes;
                 }
             }
             ColumnViewInput::DeleteEntry => {
@@ -387,23 +458,42 @@ impl ColumnView {
         toolbar.set_margin_all(8);
         toolbar.add_css_class("toolbar");
 
-        let edit_btn = gtk4::Button::from_icon_name("document-edit-symbolic");
-        edit_btn.add_css_class("flat");
-        edit_btn.set_tooltip_text(Some("Edit Entry"));
-        let sender_clone = sender.clone();
-        edit_btn.connect_clicked(move |_| {
-            sender_clone.input(ColumnViewInput::EditEntry);
-        });
-        toolbar.append(&edit_btn);
+        if self.editing {
+            // Edit mode: Save and Cancel buttons
+            let save_btn = gtk4::Button::with_label("Save");
+            save_btn.add_css_class("suggested-action");
+            let sender_clone = sender.clone();
+            save_btn.connect_clicked(move |_| {
+                sender_clone.input(ColumnViewInput::ExitEditMode(true));
+            });
+            toolbar.append(&save_btn);
 
-        let delete_btn = gtk4::Button::from_icon_name("user-trash-symbolic");
-        delete_btn.add_css_class("flat");
-        delete_btn.set_tooltip_text(Some("Delete Entry"));
-        let sender_clone = sender.clone();
-        delete_btn.connect_clicked(move |_| {
-            sender_clone.input(ColumnViewInput::DeleteEntry);
-        });
-        toolbar.append(&delete_btn);
+            let cancel_btn = gtk4::Button::with_label("Cancel");
+            let sender_clone = sender.clone();
+            cancel_btn.connect_clicked(move |_| {
+                sender_clone.input(ColumnViewInput::ExitEditMode(false));
+            });
+            toolbar.append(&cancel_btn);
+        } else {
+            // View mode: Edit and Delete buttons
+            let edit_btn = gtk4::Button::from_icon_name("document-edit-symbolic");
+            edit_btn.add_css_class("flat");
+            edit_btn.set_tooltip_text(Some("Edit Entry"));
+            let sender_clone = sender.clone();
+            edit_btn.connect_clicked(move |_| {
+                sender_clone.input(ColumnViewInput::EditEntry);
+            });
+            toolbar.append(&edit_btn);
+
+            let delete_btn = gtk4::Button::from_icon_name("user-trash-symbolic");
+            delete_btn.add_css_class("flat");
+            delete_btn.set_tooltip_text(Some("Delete Entry"));
+            let sender_clone = sender.clone();
+            delete_btn.connect_clicked(move |_| {
+                sender_clone.input(ColumnViewInput::DeleteEntry);
+            });
+            toolbar.append(&delete_btn);
+        }
 
         column.append(&toolbar);
         column.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
@@ -417,193 +507,221 @@ impl ColumnView {
         details_box.set_margin_all(24);
         details_box.set_valign(gtk4::Align::Start);
 
-        // Title
-        let title = gtk4::Label::new(Some(&entry.title));
-        title.add_css_class("title-1");
-        title.set_halign(gtk4::Align::Start);
-        details_box.append(&title);
+        if self.editing {
+            // Edit mode: render form fields
+            let edited = self.edited_entry.as_ref().unwrap_or(entry);
 
-        // Fields
-        if !entry.username.is_empty() {
-            self.add_field_row(&details_box, "Username", &entry.username, false, None, sender);
-        }
+            // Title field
+            self.add_edit_field(&details_box, "Title", &edited.title, sender, |_s, text| {
+                ColumnViewInput::EditTitle(text)
+            });
 
-        if !entry.password.is_empty() {
-            let display_value = if self.password_visible {
-                entry.password.clone()
-            } else {
-                "••••••••".to_string()
-            };
-            self.add_field_row(&details_box, "Password", &display_value, true, Some(&entry.password), sender);
-        }
+            // Username field
+            self.add_edit_field(&details_box, "Username", &edited.username, sender, |_s, text| {
+                ColumnViewInput::EditUsername(text)
+            });
 
-        if let Some(otp_uri) = &entry.otp {
-            if let Ok(totp) = otp_uri.parse::<TOTP>() {
-                if let Ok(code) = totp.value_now() {
-                    // Wrap TOTP in Rc to share with closures
-                    let totp = Rc::new(totp);
+            // Password field
+            self.add_password_edit_field(&details_box, "Password", &edited.password, sender);
 
-                    // Custom TOTP Row with Animation
-                    let row = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+            // URL field
+            self.add_edit_field(&details_box, "URL", &edited.url, sender, |_s, text| {
+                ColumnViewInput::EditUrl(text)
+            });
 
-                    let label_widget = gtk4::Label::new(Some("TOTP"));
-                    label_widget.add_css_class("dim-label");
-                    label_widget.set_halign(gtk4::Align::Start);
-                    row.append(&label_widget);
+            // Notes field
+            self.add_notes_edit_field(&details_box, "Notes", &edited.notes, sender);
 
-                    let value_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        } else {
+            // View mode: render read-only labels
+            // Title
+            let title = gtk4::Label::new(Some(&entry.title));
+            title.add_css_class("title-1");
+            title.set_halign(gtk4::Align::Start);
+            details_box.append(&title);
 
-                    let code_label = gtk4::Label::new(None);
-                    code_label.set_halign(gtk4::Align::Start);
-                    code_label.set_hexpand(true);
-                    code_label.set_selectable(true);
-                    code_label.set_markup(&format!("<span font_family=\"monospace\" size=\"large\">{}</span>", code.code));
-                    value_row.append(&code_label);
+            // Fields
+            if !entry.username.is_empty() {
+                self.add_field_row(&details_box, "Username", &entry.username, false, None, sender);
+            }
 
-                    // Drawing Area for Progress
-                    let drawing_area = gtk4::DrawingArea::new();
-                    drawing_area.set_content_width(24);
-                    drawing_area.set_content_height(24);
-                    drawing_area.set_margin_end(8);
+            if !entry.password.is_empty() {
+                let display_value = if self.password_visible {
+                    entry.password.clone()
+                } else {
+                    "••••••••".to_string()
+                };
+                self.add_field_row(&details_box, "Password", &display_value, true, Some(&entry.password), sender);
+            }
 
-                    let totp_draw = totp.clone();
+            if let Some(otp_uri) = &entry.otp {
+                if let Ok(totp) = otp_uri.parse::<TOTP>() {
+                    if let Ok(code) = totp.value_now() {
+                        // Wrap TOTP in Rc to share with closures
+                        let totp = Rc::new(totp);
 
-                    drawing_area.set_draw_func(move |_area: &gtk4::DrawingArea, cr: &Context, width: i32, height: i32| {
-                        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-                        let period = totp_draw.period;
-                        if period == 0 { return; }
-                        
-                        let remaining = period - (now % period);
-                        let progress = remaining as f64 / period as f64;
+                        // Custom TOTP Row with Animation
+                        let row = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
 
-                        let center_x = width as f64 / 2.0;
-                        let center_y = height as f64 / 2.0;
-                        let radius = f64::min(center_x, center_y);
+                        let label_widget = gtk4::Label::new(Some("TOTP"));
+                        label_widget.add_css_class("dim-label");
+                        label_widget.set_halign(gtk4::Align::Start);
+                        row.append(&label_widget);
 
-                        // Background Circle (Light Gray)
-                        cr.set_source_rgba(0.85, 0.85, 0.85, 1.0);
-                        cr.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
-                        cr.fill().expect("Invalid cairo surface state");
+                        let value_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
 
-                        // Progress Pie (Blue)
-                        cr.set_source_rgba(0.2, 0.6, 1.0, 1.0);
-                        cr.move_to(center_x, center_y);
-                        // Rotate -90 degrees (start at top)
-                        let start_angle = -std::f64::consts::PI / 2.0;
-                        let end_angle = start_angle + (2.0 * std::f64::consts::PI * progress);
-                        cr.arc(center_x, center_y, radius, start_angle, end_angle);
-                        cr.close_path();
-                        cr.fill().expect("Invalid cairo surface state");
-                    });
-                    value_row.append(&drawing_area);
+                        let code_label = gtk4::Label::new(None);
+                        code_label.set_halign(gtk4::Align::Start);
+                        code_label.set_hexpand(true);
+                        code_label.set_selectable(true);
+                        code_label.set_markup(&format!("<span font_family=\"monospace\" size=\"large\">{}</span>", code.code));
+                        value_row.append(&code_label);
 
-                    // Copy Button
-                    let copy_btn = gtk4::Button::from_icon_name("edit-copy-symbolic");
-                    copy_btn.add_css_class("flat");
-                    copy_btn.set_tooltip_text(Some("Copy to clipboard"));
-                    let totp_copy = totp.clone();
-                    let sender_clone = sender.clone();
-                    copy_btn.connect_clicked(move |_| {
-                        if let Ok(code) = totp_copy.value_now() {
-                            sender_clone.input(ColumnViewInput::CopyField(code.code));
-                        }
-                    });
-                    value_row.append(&copy_btn);
+                        // Drawing Area for Progress
+                        let drawing_area = gtk4::DrawingArea::new();
+                        drawing_area.set_content_width(24);
+                        drawing_area.set_content_height(24);
+                        drawing_area.set_margin_end(8);
 
-                    row.append(&value_row);
-                    details_box.append(&row);
+                        let totp_draw = totp.clone();
 
-                    // Timer to update UI
-                    let totp_timer = totp.clone();
-                    glib::timeout_add_local(
-                        std::time::Duration::from_millis(100),
-                        glib::clone!(@weak code_label, @weak drawing_area => @default-return glib::ControlFlow::Break, move || {
-                            if let Ok(code) = totp_timer.value_now() {
-                                // Update Text if changed
-                                // We check plain text vs code to avoid resetting markup if not needed, 
-                                // but retrieving text from markup label returns plain text.
-                                let current_text = code_label.text();
-                                if current_text.as_str() != code.code {
-                                    code_label.set_markup(&format!("<span font_family=\"monospace\" size=\"large\">{}</span>", code.code));
-                                }
-                                
-                                // Trigger redraw
-                                drawing_area.queue_draw();
+                        drawing_area.set_draw_func(move |_area: &gtk4::DrawingArea, cr: &Context, width: i32, height: i32| {
+                            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                            let period = totp_draw.period;
+                            if period == 0 { return; }
+                            
+                            let remaining = period - (now % period);
+                            let progress = remaining as f64 / period as f64;
+
+                            let center_x = width as f64 / 2.0;
+                            let center_y = height as f64 / 2.0;
+                            let radius = f64::min(center_x, center_y);
+
+                            // Background Circle (Light Gray)
+                            cr.set_source_rgba(0.85, 0.85, 0.85, 1.0);
+                            cr.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
+                            cr.fill().expect("Invalid cairo surface state");
+
+                            // Progress Pie (Blue)
+                            cr.set_source_rgba(0.2, 0.6, 1.0, 1.0);
+                            cr.move_to(center_x, center_y);
+                            // Rotate -90 degrees (start at top)
+                            let start_angle = -std::f64::consts::PI / 2.0;
+                            let end_angle = start_angle + (2.0 * std::f64::consts::PI * progress);
+                            cr.arc(center_x, center_y, radius, start_angle, end_angle);
+                            cr.close_path();
+                            cr.fill().expect("Invalid cairo surface state");
+                        });
+                        value_row.append(&drawing_area);
+
+                        // Copy Button
+                        let copy_btn = gtk4::Button::from_icon_name("edit-copy-symbolic");
+                        copy_btn.add_css_class("flat");
+                        copy_btn.set_tooltip_text(Some("Copy to clipboard"));
+                        let totp_copy = totp.clone();
+                        let sender_clone = sender.clone();
+                        copy_btn.connect_clicked(move |_| {
+                            if let Ok(code) = totp_copy.value_now() {
+                                sender_clone.input(ColumnViewInput::CopyField(code.code));
                             }
-                            glib::ControlFlow::Continue
-                        })
-                    );
+                        });
+                        value_row.append(&copy_btn);
+
+                        row.append(&value_row);
+                        details_box.append(&row);
+
+                        // Timer to update UI
+                        let totp_timer = totp.clone();
+                        glib::timeout_add_local(
+                            std::time::Duration::from_millis(100),
+                            glib::clone!(@weak code_label, @weak drawing_area => @default-return glib::ControlFlow::Break, move || {
+                                if let Ok(code) = totp_timer.value_now() {
+                                    // Update Text if changed
+                                    // We check plain text vs code to avoid resetting markup if not needed, 
+                                    // but retrieving text from markup label returns plain text.
+                                    let current_text = code_label.text();
+                                    if current_text.as_str() != code.code {
+                                        code_label.set_markup(&format!("<span font_family=\"monospace\" size=\"large\">{}</span>", code.code));
+                                    }
+                                    
+                                    // Trigger redraw
+                                    drawing_area.queue_draw();
+                                }
+                                glib::ControlFlow::Continue
+                            })
+                        );
+                    }
                 }
+
             }
 
-        }
+            if !entry.url.is_empty() {
+                self.add_field_row(&details_box, "URL", &entry.url, false, None, sender);
+            }
 
-        if !entry.url.is_empty() {
-            self.add_field_row(&details_box, "URL", &entry.url, false, None, sender);
-        }
+            if !entry.notes.is_empty() {
+                let notes_label = gtk4::Label::new(Some("Notes"));
+                notes_label.add_css_class("dim-label");
+                notes_label.set_halign(gtk4::Align::Start);
+                details_box.append(&notes_label);
 
-        if !entry.notes.is_empty() {
-            let notes_label = gtk4::Label::new(Some("Notes"));
-            notes_label.add_css_class("dim-label");
-            notes_label.set_halign(gtk4::Align::Start);
-            details_box.append(&notes_label);
+                let notes_text = gtk4::Label::new(Some(&entry.notes));
+                notes_text.set_halign(gtk4::Align::Start);
+                notes_text.set_wrap(true);
+                notes_text.set_selectable(true);
+                details_box.append(&notes_text);
+            }
 
-            let notes_text = gtk4::Label::new(Some(&entry.notes));
-            notes_text.set_halign(gtk4::Align::Start);
-            notes_text.set_wrap(true);
-            notes_text.set_selectable(true);
-            details_box.append(&notes_text);
-        }
+            if !entry.attachments.is_empty() {
+                let att_label = gtk4::Label::new(Some("Attachments"));
+                att_label.add_css_class("dim-label");
+                att_label.set_halign(gtk4::Align::Start);
+                att_label.set_margin_top(12);
+                details_box.append(&att_label);
 
-        if !entry.attachments.is_empty() {
-            let att_label = gtk4::Label::new(Some("Attachments"));
-            att_label.add_css_class("dim-label");
-            att_label.set_halign(gtk4::Align::Start);
-            att_label.set_margin_top(12);
-            details_box.append(&att_label);
-
-            let att_box = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-            
-            for att in &entry.attachments {
-                let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+                let att_box = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
                 
-                let icon = gtk4::Image::from_icon_name("mail-attachment-symbolic");
-                row.append(&icon);
+                for att in &entry.attachments {
+                    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+                    
+                    let icon = gtk4::Image::from_icon_name("mail-attachment-symbolic");
+                    row.append(&icon);
 
-                let name_label = gtk4::Label::new(Some(&att.filename));
-                name_label.set_hexpand(true);
-                name_label.set_halign(gtk4::Align::Start);
-                row.append(&name_label);
+                    let name_label = gtk4::Label::new(Some(&att.filename));
+                    name_label.set_hexpand(true);
+                    name_label.set_halign(gtk4::Align::Start);
+                    row.append(&name_label);
 
-                // Size
-                let size_kb = att.data.len() as f64 / 1024.0;
-                let size_label = gtk4::Label::new(Some(&format!("{:.1} KB", size_kb)));
-                size_label.add_css_class("dim-label");
-                row.append(&size_label);
+                    // Size
+                    let size_kb = att.data.len() as f64 / 1024.0;
+                    let size_label = gtk4::Label::new(Some(&format!("{:.1} KB", size_kb)));
+                    size_label.add_css_class("dim-label");
+                    row.append(&size_label);
 
-                let save_btn = gtk4::Button::from_icon_name("document-save-symbolic");
-                save_btn.add_css_class("flat");
-                save_btn.set_tooltip_text(Some("Save Attachment"));
-                let filename = att.filename.clone();
-                let sender_clone = sender.clone();
-                save_btn.connect_clicked(move |_| {
-                    sender_clone.input(ColumnViewInput::SaveAttachment(filename.clone()));
-                });
-                row.append(&save_btn);
+                    let save_btn = gtk4::Button::from_icon_name("document-save-symbolic");
+                    save_btn.add_css_class("flat");
+                    save_btn.set_tooltip_text(Some("Save Attachment"));
+                    let filename = att.filename.clone();
+                    let sender_clone = sender.clone();
+                    save_btn.connect_clicked(move |_| {
+                        sender_clone.input(ColumnViewInput::SaveAttachment(filename.clone()));
+                    });
+                    row.append(&save_btn);
 
-                let open_btn = gtk4::Button::from_icon_name("document-open-symbolic");
-                open_btn.add_css_class("flat");
-                open_btn.set_tooltip_text(Some("Open Attachment"));
-                let filename = att.filename.clone();
-                let sender_clone = sender.clone();
-                open_btn.connect_clicked(move |_| {
-                    sender_clone.input(ColumnViewInput::OpenAttachment(filename.clone()));
-                });
-                row.append(&open_btn);
+                    let open_btn = gtk4::Button::from_icon_name("document-open-symbolic");
+                    open_btn.add_css_class("flat");
+                    open_btn.set_tooltip_text(Some("Open Attachment"));
+                    let filename = att.filename.clone();
+                    let sender_clone = sender.clone();
+                    open_btn.connect_clicked(move |_| {
+                        sender_clone.input(ColumnViewInput::OpenAttachment(filename.clone()));
+                    });
+                    row.append(&open_btn);
 
-                att_box.append(&row);
+                    att_box.append(&row);
+                }
+                details_box.append(&att_box);
             }
-            details_box.append(&att_box);
         }
 
         scrolled.set_child(Some(&details_box));
@@ -611,6 +729,7 @@ impl ColumnView {
 
         column
     }
+
 
     /// Add a field row with copy button.
     fn add_field_row(
@@ -661,6 +780,103 @@ impl ColumnView {
         value_row.append(&copy_btn);
 
         row.append(&value_row);
+        container.append(&row);
+    }
+
+    /// Add an editable text field.
+    fn add_edit_field<F>(
+        &self,
+        container: &gtk4::Box,
+        label: &str,
+        value: &str,
+        sender: &ComponentSender<Self>,
+        make_input: F,
+    )
+    where
+        F: Fn(&ComponentSender<Self>, String) -> ColumnViewInput + 'static,
+    {
+        let row = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+
+        let label_widget = gtk4::Label::new(Some(label));
+        label_widget.add_css_class("dim-label");
+        label_widget.set_halign(gtk4::Align::Start);
+        row.append(&label_widget);
+
+        let entry = gtk4::Entry::new();
+        entry.set_text(value);
+        entry.set_hexpand(true);
+
+        let sender_clone = sender.clone();
+        entry.connect_changed(move |e| {
+            let text = e.text().to_string();
+            sender_clone.input(make_input(&sender_clone, text));
+        });
+
+        row.append(&entry);
+        container.append(&row);
+    }
+
+    /// Add an editable password field.
+    fn add_password_edit_field(
+        &self,
+        container: &gtk4::Box,
+        label: &str,
+        value: &str,
+        sender: &ComponentSender<Self>,
+    ) {
+        let row = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+
+        let label_widget = gtk4::Label::new(Some(label));
+        label_widget.add_css_class("dim-label");
+        label_widget.set_halign(gtk4::Align::Start);
+        row.append(&label_widget);
+
+        let entry = gtk4::PasswordEntry::new();
+        entry.set_text(value);
+        entry.set_show_peek_icon(true);
+        entry.set_hexpand(true);
+
+        let sender_clone = sender.clone();
+        entry.connect_changed(move |e| {
+            let text = e.text().to_string();
+            sender_clone.input(ColumnViewInput::EditPassword(text));
+        });
+
+        row.append(&entry);
+        container.append(&row);
+    }
+
+    /// Add an editable notes field (multi-line).
+    fn add_notes_edit_field(
+        &self,
+        container: &gtk4::Box,
+        label: &str,
+        value: &str,
+        sender: &ComponentSender<Self>,
+    ) {
+        let row = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+
+        let label_widget = gtk4::Label::new(Some(label));
+        label_widget.add_css_class("dim-label");
+        label_widget.set_halign(gtk4::Align::Start);
+        row.append(&label_widget);
+
+        let frame = gtk4::Frame::new(None);
+        frame.set_height_request(100);
+
+        let text_view = gtk4::TextView::new();
+        text_view.set_wrap_mode(gtk4::WrapMode::Word);
+        text_view.set_margin_all(8);
+        text_view.buffer().set_text(value);
+
+        let sender_clone = sender.clone();
+        text_view.buffer().connect_changed(move |buf| {
+            let text = buf.text(&buf.start_iter(), &buf.end_iter(), false).to_string();
+            sender_clone.input(ColumnViewInput::EditNotes(text));
+        });
+
+        frame.set_child(Some(&text_view));
+        row.append(&frame);
         container.append(&row);
     }
 }
