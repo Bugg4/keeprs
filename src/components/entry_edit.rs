@@ -250,12 +250,22 @@ impl Component for EntryEdit {
                 self.is_new = true;
                 self.visible = true;
                 widgets.notes_view.buffer().set_text("");
+                widgets.title_entry.set_text("");
+                widgets.username_entry.set_text("");
+                widgets.password_entry.set_text("");
+                widgets.url_entry.set_text("");
+                widgets.dialog.present();
             }
             EntryEditInput::Edit(entry) => {
                 widgets.notes_view.buffer().set_text(&entry.notes);
+                widgets.title_entry.set_text(&entry.title);
+                widgets.username_entry.set_text(&entry.username);
+                widgets.password_entry.set_text(&entry.password);
+                widgets.url_entry.set_text(&entry.url);
                 self.entry = entry;
                 self.is_new = false;
                 self.visible = true;
+                widgets.dialog.present();
             }
             EntryEditInput::TitleChanged(title) => {
                 self.entry.title = title;
@@ -274,10 +284,12 @@ impl Component for EntryEdit {
             }
             EntryEditInput::Save => {
                 self.visible = false;
+                widgets.dialog.set_visible(false);
                 let _ = sender.output(EntryEditOutput::Saved(self.entry.clone()));
             }
             EntryEditInput::Cancel => {
                 self.visible = false;
+                widgets.dialog.set_visible(false);
                 let _ = sender.output(EntryEditOutput::Cancelled);
             }
         }

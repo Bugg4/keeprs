@@ -154,8 +154,43 @@ impl KeepassDatabase {
         &mut self.db
     }
 
-    /// Get the database path.
-    pub fn path(&self) -> &Path {
-        &self.path
+    /// Update an entry in the database.
+    pub fn update_entry(&mut self, entry: &Entry) -> Result<()> {
+        if Self::update_entry_recursive(&mut self.db.root, entry) {
+            Ok(())
+        } else {
+            anyhow::bail!("Entry with UUID {} not found", entry.uuid)
+        }
+    }
+
+    fn update_entry_recursive(group: &mut keepass::db::Group, entry: &Entry) -> bool {
+        for node in &mut group.children {
+            match node {
+                keepass::db::Node::Entry(e) => {
+                    if e.uuid.to_string() == entry.uuid {
+                        // Update standard fields
+                        e.fields.insert("Title".to_string(), keepass::db::Value::Unprotected(entry.title.clone()));
+                        e.fields.insert("UserName".to_string(), keepass::db::Value::Unprotected(entry.username.clone()));
+                        e.fields.insert("Password".to_string(), keepass::db::Value::Protected(entry.password.as_bytes().into()));
+                        e.fields.insert("URL".to_string(), keepass::db::Value::Unprotected(entry.url.clone()));
+                        e.fields.insert("Notes".to_string(), keepass::db::Value::Unprotected(entry.notes.clone()));
+
+                        // Update custom fields (simple overwrite for now)
+                        // Note: This matches convert_entry logic where we only handle string values
+                        for (k, v) in &entry.custom_fields {
+                             e.fields.insert(k.clone(), keepass::db::Value::Unprotected(v.clone()));
+                        }
+                        
+                        return true;
+                    }
+                }
+                keepass::db::Node::Group(g) => {
+                    if Self::update_entry_recursive(g, entry) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 }

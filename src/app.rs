@@ -231,6 +231,9 @@ impl Component for App {
         // Start on unlock screen
         widgets.main_stack.set_visible_child_name("unlock");
 
+        // Connect dialogs to main window
+        model.entry_edit.widget().set_transient_for(Some(&widgets.main_window));
+
         ComponentParts { model, widgets }
     }
 
@@ -320,6 +323,7 @@ impl Component for App {
                 }
             }
             AppInput::EditEntry(entry) => {
+                tracing::info!("Opening edit dialog for entry: {}", entry.title);
                 self.entry_edit.emit(EntryEditInput::Edit(entry));
             }
             AppInput::DeleteEntry(uuid) => {
@@ -337,10 +341,33 @@ impl Component for App {
             }
             AppInput::EntrySaved(entry) => {
                 tracing::info!("Entry saved: {}", entry.title);
-                // TODO: Implement save through the database
-                // For now, just refresh the view
+                
+                if let Some(ref db) = self.database {
+                    let mut db = db.borrow_mut();
+                    
+                    // Update entry in database
+                    if let Err(e) = db.update_entry(&entry) {
+                        tracing::error!("Failed to update entry: {}", e);
+                        // TODO: Show error dialog
+                        return;
+                    }
+
+                    // Save database to disk
+                    if let Err(e) = db.save() {
+                        tracing::error!("Failed to save database: {}", e);
+                         // TODO: Show error dialog
+                         return;
+                    }
+                    
+                    tracing::info!("Database saved successfully");
+                }
+
+                // Refresh the view and re-select the entry
                 if let Some(ref group_uuid) = self.current_group_uuid {
-                    sender.input(AppInput::GroupSelected(group_uuid.clone()));
+                    sender.input(AppInput::SearchEntrySelected { 
+                        entry: entry.clone(), 
+                        group_uuid: group_uuid.clone() 
+                    });
                 }
             }
             AppInput::SaveAttachment { filename, data } => {
