@@ -4,3 +4,33 @@
     border: none; 
     min-height: 0px;
 }
+
+/* Search palette styling */
+.search-palette {
+    border-radius: 12px;
+    border: 2px solid @accent_bg_color;
+    overflow: hidden;
+}
+
+.search-palette > box {
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.search-palette searchentry {
+    border-radius: 8px;
+    min-height: 40px;
+    font-size: 1.1em;
+}
+
+.search-palette scrolledwindow {
+    border-radius: 0 0 10px 10px;
+}
+
+.search-palette scrolledwindow viewport {
+    border-radius: 0 0 10px 10px;
+}
+
+.search-palette list {
+    border-radius: 0 0 10px 10px;
+}

@@ -105,6 +105,7 @@ impl Component for SearchPalette {
                 set_orientation: gtk4::Orientation::Vertical,
                 add_css_class: "popover", // Gives it the floating window look
                 add_css_class: "background", // Ensures opaque background
+                add_css_class: "search-palette", // Custom styling
 
                 gtk4::Box {
                     set_orientation: gtk4::Orientation::Vertical,
