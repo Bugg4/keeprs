@@ -1,6 +1,6 @@
 //! KeePass database operations wrapper.
 
-use crate::models::{Entry, Group};
+use crate::models::{Attachment, Entry, Group};
 use anyhow::{Context, Result};
 use keepass::{Database, DatabaseKey};
 use std::path::Path;
@@ -39,50 +39,59 @@ impl KeepassDatabase {
         Group {
             uuid: kg.uuid.to_string(),
             name: kg.name.clone(),
-            children: kg.children.iter().filter_map(|node| {
-                if let keepass::db::Node::Group(g) = node {
-                    Some(self.convert_group(g))
-                } else {
-                    None
-                }
-            }).collect(),
-            entries: kg.children.iter().filter_map(|node| {
-                if let keepass::db::Node::Entry(e) = node {
-                    Some(self.convert_entry(e))
-                } else {
-                    None
-                }
-            }).collect(),
+            children: kg
+                .children
+                .iter()
+                .filter_map(|node| {
+                    if let keepass::db::Node::Group(g) = node {
+                        Some(self.convert_group(g))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            entries: kg
+                .children
+                .iter()
+                .filter_map(|node| {
+                    if let keepass::db::Node::Entry(e) = node {
+                        Some(self.convert_entry(e))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
         }
     }
 
-    /// Convert a keepass::Entry to our Entry model.
     /// Convert a keepass::Entry to our Entry model.
     fn convert_entry(&self, ke: &keepass::db::Entry) -> Entry {
         let mut custom_fields = std::collections::HashMap::new();
         let mut attachments = Vec::new();
 
-        
         for (key, val) in &ke.fields {
             // Skip standard fields that are handled by specific getters
-            if matches!(key.as_str(), "Title" | "UserName" | "Password" | "URL" | "Notes") {
+            if matches!(
+                key.as_str(),
+                "Title" | "UserName" | "Password" | "URL" | "Notes"
+            ) {
                 continue;
             }
 
             match val {
                 keepass::db::Value::Bytes(bytes) => {
-                    attachments.push(crate::models::Attachment {
+                    attachments.push(Attachment {
                         filename: key.clone(),
-                        _mime_type: None, 
+                        _mime_type: None,
                         data: bytes.clone(),
                     });
                 }
                 keepass::db::Value::BinaryRef(ref_id) => {
                     if let Ok(index) = ref_id.parse::<usize>() {
                         if let Some(att) = self.db.header_attachments.get(index) {
-                            attachments.push(crate::models::Attachment {
+                            attachments.push(Attachment {
                                 filename: key.clone(),
-                                _mime_type: None, 
+                                _mime_type: None,
                                 data: att.content.clone(),
                             });
                         } else {
@@ -143,7 +152,8 @@ impl KeepassDatabase {
         let mut file = std::fs::File::create(&self.path)
             .with_context(|| format!("Failed to create database file: {}", self.path.display()))?;
 
-        self.db.save(&mut file, self.key.clone())
+        self.db
+            .save(&mut file, self.key.clone())
             .with_context(|| "Failed to save database")?;
 
         Ok(())
@@ -169,18 +179,33 @@ impl KeepassDatabase {
                 keepass::db::Node::Entry(e) => {
                     if e.uuid.to_string() == entry.uuid {
                         // Update standard fields
-                        e.fields.insert("Title".to_string(), keepass::db::Value::Unprotected(entry.title.clone()));
-                        e.fields.insert("UserName".to_string(), keepass::db::Value::Unprotected(entry.username.clone()));
-                        e.fields.insert("Password".to_string(), keepass::db::Value::Protected(entry.password.as_bytes().into()));
-                        e.fields.insert("URL".to_string(), keepass::db::Value::Unprotected(entry.url.clone()));
-                        e.fields.insert("Notes".to_string(), keepass::db::Value::Unprotected(entry.notes.clone()));
+                        e.fields.insert(
+                            "Title".to_string(),
+                            keepass::db::Value::Unprotected(entry.title.clone()),
+                        );
+                        e.fields.insert(
+                            "UserName".to_string(),
+                            keepass::db::Value::Unprotected(entry.username.clone()),
+                        );
+                        e.fields.insert(
+                            "Password".to_string(),
+                            keepass::db::Value::Protected(entry.password.as_bytes().into()),
+                        );
+                        e.fields.insert(
+                            "URL".to_string(),
+                            keepass::db::Value::Unprotected(entry.url.clone()),
+                        );
+                        e.fields.insert(
+                            "Notes".to_string(),
+                            keepass::db::Value::Unprotected(entry.notes.clone()),
+                        );
 
                         // Update custom fields (simple overwrite for now)
-                        // Note: This matches convert_entry logic where we only handle string values
                         for (k, v) in &entry.custom_fields {
-                             e.fields.insert(k.clone(), keepass::db::Value::Unprotected(v.clone()));
+                            e.fields
+                                .insert(k.clone(), keepass::db::Value::Unprotected(v.clone()));
                         }
-                        
+
                         return true;
                     }
                 }

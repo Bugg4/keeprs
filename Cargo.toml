@@ -1,29 +1,25 @@
-[package]
-name = "keeprs"
+[workspace]
+resolver = "2"
+members = [
+    "crates/keeprs-core",
+    "crates/keeprs-gui",
+    "crates/keeprs-tui",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
-description = "A minimalist KeePass database manager"
 license = "MIT"
 
-[dependencies]
-# GUI
-gtk4 = "0.9"
-relm4 = "0.9"
-
+[workspace.dependencies]
 # KeePass database handling
 keepass = { path = "vendor/keepass", features = ["save_kdbx4", "totp"] }
 
 # Config and serialization
-toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
-dirs = "5.0"
 
 # Fuzzy search
 fuzzy-matcher = "0.3"
-
-# Async runtime (for file operations)
-tokio = { version = "1", features = ["rt", "fs"] }
-tempfile = "3"
 
 # Error handling
 anyhow = "1.0"

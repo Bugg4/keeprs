@@ -1,6 +1,6 @@
 //! Entry edit dialog component.
 
-use crate::models::Entry;
+use keeprs_core::Entry;
 use gtk4::prelude::*;
 use relm4::prelude::*;
 

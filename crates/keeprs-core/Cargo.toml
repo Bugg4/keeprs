@@ -1,0 +1,12 @@
+[package]
+name = "keeprs-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core models and database handling for keeprs"
+
+[dependencies]
+keepass.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+tracing.workspace = true

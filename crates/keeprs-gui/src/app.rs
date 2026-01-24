@@ -6,8 +6,7 @@ use crate::components::search_palette::{SearchPalette, SearchPaletteInput, Searc
 use crate::components::sidebar::{Sidebar, SidebarInit, SidebarInput, SidebarOutput};
 use crate::components::unlock::{UnlockDialog, UnlockInput, UnlockOutput};
 use crate::config::Config;
-use crate::database::KeepassDatabase;
-use crate::models::{Entry, Group};
+use keeprs_core::{Entry, Group, KeepassDatabase};
 
 use gtk4::prelude::*;
 use gtk4::gdk;

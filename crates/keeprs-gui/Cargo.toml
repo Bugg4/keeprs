@@ -1,0 +1,38 @@
+[package]
+name = "keeprs-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "GTK4 GUI for keeprs KeePass client"
+
+[[bin]]
+name = "keeprs"
+path = "src/main.rs"
+
+[dependencies]
+keeprs-core = { path = "../keeprs-core" }
+keepass.workspace = true
+
+# GUI
+gtk4 = "0.9"
+relm4 = "0.9"
+
+# Config and serialization
+toml = "0.8"
+serde.workspace = true
+dirs = "5.0"
+
+# Fuzzy search
+fuzzy-matcher.workspace = true
+
+# Async runtime (for file operations)
+tokio = { version = "1", features = ["rt", "fs"] }
+tempfile = "3"
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true

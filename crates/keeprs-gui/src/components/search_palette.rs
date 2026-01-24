@@ -1,6 +1,6 @@
 //! Search palette component - VSCode-style fuzzy search overlay.
 
-use crate::models::{Entry, Group};
+use keeprs_core::{Entry, Group};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use gtk4::prelude::*;

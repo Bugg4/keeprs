@@ -1,6 +1,6 @@
 //! Sidebar component with folder tree.
 
-use crate::models::Group;
+use keeprs_core::{Entry, Group};
 use gtk4::prelude::*;
 use relm4::prelude::*;
 
@@ -226,7 +226,7 @@ impl Sidebar {
     fn add_entry_node(
         &self,
         list_box: &gtk4::ListBox,
-        entry: &crate::models::Entry,
+        entry: &Entry,
         levels: &mut Vec<bool>,
         is_last: bool,
     ) {

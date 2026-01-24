@@ -5,8 +5,6 @@
 mod app;
 mod components;
 mod config;
-mod database;
-mod models;
 
 use anyhow::Result;
 use relm4::prelude::*;

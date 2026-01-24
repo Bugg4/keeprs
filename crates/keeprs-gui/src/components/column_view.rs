@@ -3,7 +3,7 @@
 //! Displays stacked columns that expand right as user drills down,
 //! with breadcrumb fallback when space is limited.
 
-use crate::models::{Entry, Group, NavigationPath, NavigationStep};
+use keeprs_core::{Entry, Group, NavigationPath, NavigationStep};
 use gtk4::prelude::*;
 use gtk4::gdk;
 use gtk4::glib;

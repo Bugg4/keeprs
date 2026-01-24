@@ -1,6 +1,6 @@
 //! Search bar component - always visible fuzzy search.
 
-use crate::models::{Entry, Group};
+use keeprs_core::{Entry, Group};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use gtk4::prelude::*;
