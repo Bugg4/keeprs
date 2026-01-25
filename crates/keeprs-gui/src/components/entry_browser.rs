@@ -89,11 +89,13 @@ pub struct EntryBrowser {
     editing: bool,
     /// Entry being edited (holds uncommitted changes).
     edited_entry: Option<Entry>,
+    /// Whether to show the password entropy bar.
+    show_entropy_bar: bool,
 }
 
 #[relm4::component(pub)]
 impl Component for EntryBrowser {
-    type Init = ();
+    type Init = bool; // show_entropy_bar
     type Input = EntryBrowserInput;
     type Output = EntryBrowserOutput;
     type CommandOutput = ();
@@ -137,7 +139,7 @@ impl Component for EntryBrowser {
     }
 
     fn init(
-        _init: Self::Init,
+        show_entropy_bar: Self::Init,
         _root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
@@ -149,6 +151,7 @@ impl Component for EntryBrowser {
             password_visible: false,
             editing: false,
             edited_entry: None,
+            show_entropy_bar,
         };
 
         let widgets = view_output!();
@@ -556,12 +559,7 @@ impl EntryBrowser {
             }
 
             if !entry.password.is_empty() {
-                let display_value = if self.password_visible {
-                    entry.password.clone()
-                } else {
-                    "••••••••".to_string()
-                };
-                self.add_field_row(&details_box, "Password", &display_value, true, Some(&entry.password), sender);
+                self.add_password_row(&details_box, &entry.password, sender);
             }
 
             if let Some(otp_uri) = &entry.otp {
@@ -872,6 +870,161 @@ impl EntryBrowser {
         value_row.append(&copy_btn);
 
         row.append(&value_row);
+        container.append(&row);
+    }
+
+    /// Calculate password entropy in bits.
+    fn calculate_entropy(password: &str) -> f64 {
+        if password.is_empty() {
+            return 0.0;
+        }
+
+        // Calculate character set size based on what's in the password
+        let mut charset_size = 0u32;
+        let mut has_lower = false;
+        let mut has_upper = false;
+        let mut has_digit = false;
+        let mut has_special = false;
+
+        for c in password.chars() {
+            if c.is_ascii_lowercase() {
+                has_lower = true;
+            } else if c.is_ascii_uppercase() {
+                has_upper = true;
+            } else if c.is_ascii_digit() {
+                has_digit = true;
+            } else {
+                has_special = true;
+            }
+        }
+
+        if has_lower { charset_size += 26; }
+        if has_upper { charset_size += 26; }
+        if has_digit { charset_size += 10; }
+        if has_special { charset_size += 32; } // Common special characters
+
+        if charset_size == 0 {
+            return 0.0;
+        }
+
+        // Entropy = length * log2(charset_size)
+        password.len() as f64 * (charset_size as f64).log2()
+    }
+
+    /// Get strength label and color based on entropy.
+    fn get_strength_info(entropy: f64) -> (&'static str, &'static str) {
+        if entropy >= 80.0 {
+            ("Very Strong", "success")
+        } else if entropy >= 60.0 {
+            ("Strong", "success")
+        } else if entropy >= 40.0 {
+            ("Good", "warning")
+        } else if entropy >= 28.0 {
+            ("Weak", "warning")
+        } else {
+            ("Very Weak", "error")
+        }
+    }
+
+    /// Add a password row with visibility toggle, copy button, and entropy bar.
+    fn add_password_row(
+        &self,
+        container: &gtk4::Box,
+        password: &str,
+        sender: &ComponentSender<Self>,
+    ) {
+        let row = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+
+        let label_widget = gtk4::Label::new(Some("Password"));
+        label_widget.add_css_class("dim-label");
+        label_widget.set_halign(gtk4::Align::Start);
+        row.append(&label_widget);
+
+        let value_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+
+        let display_value = if self.password_visible {
+            password.to_string()
+        } else {
+            "••••••••".to_string()
+        };
+
+        let value_label = gtk4::Label::new(Some(&display_value));
+        value_label.set_halign(gtk4::Align::Start);
+        value_label.set_hexpand(true);
+        value_label.set_selectable(true);
+        value_row.append(&value_label);
+
+        // Toggle visibility button
+        let toggle_btn = gtk4::Button::from_icon_name(
+            if self.password_visible { "view-conceal-symbolic" } else { "view-reveal-symbolic" }
+        );
+        toggle_btn.add_css_class("flat");
+        toggle_btn.set_tooltip_text(Some("Toggle visibility"));
+        let sender_clone = sender.clone();
+        toggle_btn.connect_clicked(move |_| {
+            sender_clone.input(EntryBrowserInput::TogglePasswordVisible);
+        });
+        value_row.append(&toggle_btn);
+
+        // Copy button
+        let copy_btn = gtk4::Button::from_icon_name("edit-copy-symbolic");
+        copy_btn.add_css_class("flat");
+        copy_btn.set_tooltip_text(Some("Copy to clipboard"));
+        let password_clone = password.to_string();
+        let sender_clone = sender.clone();
+        copy_btn.connect_clicked(move |_| {
+            sender_clone.input(EntryBrowserInput::CopyField(password_clone.clone()));
+        });
+        value_row.append(&copy_btn);
+
+        row.append(&value_row);
+
+        // Entropy bar (only if enabled in config)
+        if self.show_entropy_bar {
+            let entropy = Self::calculate_entropy(password);
+            let (strength_label, strength_class) = Self::get_strength_info(entropy);
+
+            let entropy_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+            entropy_row.set_margin_top(2);
+
+            // Progress bar (thin)
+            let progress_bar = gtk4::ProgressBar::new();
+            progress_bar.set_hexpand(true);
+            progress_bar.set_valign(gtk4::Align::Center);
+            // Normalize to 0-1 (cap at 128 bits as "max")
+            let fraction = (entropy / 128.0).min(1.0);
+            progress_bar.set_fraction(fraction);
+            
+            // Add appropriate CSS class for color
+            match strength_class {
+                "success" => progress_bar.add_css_class("success"),
+                "warning" => progress_bar.add_css_class("warning"),
+                "error" => progress_bar.add_css_class("error"),
+                _ => {}
+            }
+            
+            entropy_row.append(&progress_bar);
+
+            // Entropy text
+            let entropy_text = gtk4::Label::new(Some(&format!("{:.0} bits", entropy)));
+            entropy_text.add_css_class("dim-label");
+            entropy_text.add_css_class("caption");
+            entropy_row.append(&entropy_text);
+
+            // Strength label
+            let strength_text = gtk4::Label::new(Some(strength_label));
+            strength_text.add_css_class("caption");
+            match strength_class {
+                "success" => strength_text.add_css_class("success"),
+                "warning" => strength_text.add_css_class("warning"),
+                "error" => strength_text.add_css_class("error"),
+                _ => {}
+            }
+            entropy_row.append(&strength_text);
+
+            row.append(&entropy_row);
+        }
+        
         container.append(&row);
     }
 

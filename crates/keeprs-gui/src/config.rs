@@ -17,6 +17,9 @@ pub struct Config {
     /// Minimum width the sidebar can be shrunk to.
     #[serde(default = "default_sidebar_min_width")]
     pub sidebar_min_width: i32,
+    /// Whether to show the password entropy bar.
+    #[serde(default = "default_show_entropy_bar")]
+    pub show_entropy_bar: bool,
 }
 
 fn default_sidebar_initial_width() -> i32 {
@@ -27,12 +30,17 @@ fn default_sidebar_min_width() -> i32 {
     150
 }
 
+fn default_show_entropy_bar() -> bool {
+    true
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
             database_path: PathBuf::from("database.kdbx"),
             sidebar_initial_width: default_sidebar_initial_width(),
             sidebar_min_width: default_sidebar_min_width(),
+            show_entropy_bar: default_show_entropy_bar(),
         }
     }
 }

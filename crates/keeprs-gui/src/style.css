@@ -45,3 +45,37 @@ list {
 .search-palette list {
     border-radius: 0 0 10px 10px;
 }
+
+/* Entropy bar styling */
+progressbar.success > trough > progress {
+    background-color: @success_bg_color;
+}
+
+progressbar.warning > trough > progress {
+    background-color: @warning_bg_color;
+}
+
+progressbar.error > trough > progress {
+    background-color: @error_bg_color;
+}
+
+progressbar > trough {
+    min-height: 4px;
+}
+
+progressbar > trough > progress {
+    min-height: 4px;
+}
+
+/* Strength label colors */
+label.success {
+    color: @success_color;
+}
+
+label.warning {
+    color: @warning_color;
+}
+
+label.error {
+    color: @error_color;
+}
