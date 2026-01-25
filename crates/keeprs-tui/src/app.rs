@@ -385,13 +385,14 @@ impl App {
     }
 
     fn find_path_to_entry_static(group: &Group, entry_uuid: &str, path: &mut Vec<String>) -> bool {
+        path.push(group.uuid.clone());
+
         for entry in &group.entries {
             if entry.uuid == entry_uuid {
                 return true;
             }
         }
 
-        path.push(group.uuid.clone());
         for child in &group.children {
             if Self::find_path_to_entry_static(child, entry_uuid, path) {
                 return true;
