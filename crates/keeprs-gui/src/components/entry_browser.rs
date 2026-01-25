@@ -1,7 +1,7 @@
-//! Miller columns navigation view.
+//! Entry browser component.
 //!
-//! Displays stacked columns that expand right as user drills down,
-//! with breadcrumb fallback when space is limited.
+//! Displays entry list and entry details with breadcrumb navigation.
+//! Uses a two-column layout: entry list on the left, details on the right.
 
 use keeprs_core::{Entry, Group, NavigationPath, NavigationStep};
 use gtk4::prelude::*;
@@ -15,9 +15,9 @@ use std::rc::Rc;
 /// Minimum width for each column.
 const COLUMN_MIN_WIDTH: i32 = 250;
 
-/// Messages for the column view.
+/// Messages for the entry browser.
 #[derive(Debug)]
-pub enum ColumnViewInput {
+pub enum EntryBrowserInput {
     /// Set the root group data.
     SetRootGroup(Group),
     /// User selected a group in sidebar (start fresh navigation).
@@ -56,9 +56,9 @@ pub enum ColumnViewInput {
     EditNotes(String),
 }
 
-/// Output messages from column view.
+/// Output messages from entry browser.
 #[derive(Debug, Clone)]
-pub enum ColumnViewOutput {
+pub enum EntryBrowserOutput {
     /// User wants to add an entry.
     AddEntry,
     /// User wants to delete an entry.
@@ -71,8 +71,8 @@ pub enum ColumnViewOutput {
     EntryEdited(Entry),
 }
 
-/// Column view model.
-pub struct ColumnView {
+/// Entry browser model.
+pub struct EntryBrowser {
     /// The full group tree (for lookups).
     root_group: Option<Group>,
     /// Current navigation path.
@@ -90,10 +90,10 @@ pub struct ColumnView {
 }
 
 #[relm4::component(pub)]
-impl Component for ColumnView {
+impl Component for EntryBrowser {
     type Init = ();
-    type Input = ColumnViewInput;
-    type Output = ColumnViewOutput;
+    type Input = EntryBrowserInput;
+    type Output = EntryBrowserOutput;
     type CommandOutput = ();
 
     view! {
@@ -139,7 +139,7 @@ impl Component for ColumnView {
         _root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = ColumnView {
+        let model = EntryBrowser {
             root_group: None,
             nav_path: NavigationPath::new(),
             current_entries: Vec::new(),
@@ -162,10 +162,10 @@ impl Component for ColumnView {
         _root: &Self::Root,
     ) {
         match message {
-            ColumnViewInput::SetRootGroup(group) => {
+            EntryBrowserInput::SetRootGroup(group) => {
                 self.root_group = Some(group);
             }
-            ColumnViewInput::SelectGroup { uuid, name, group } => {
+            EntryBrowserInput::SelectGroup { uuid, name, group } => {
                 // Start fresh navigation from this group
                 self.nav_path = NavigationPath::new();
                 self.nav_path.push_group(uuid, name);
@@ -176,7 +176,7 @@ impl Component for ColumnView {
                 self.edited_entry = None;
                 self.rebuild_columns(widgets, &sender);
             }
-            ColumnViewInput::SelectEntry { uuid, entry } => {
+            EntryBrowserInput::SelectEntry { uuid, entry } => {
                 // Add entry to navigation
                 self.nav_path.push_entry(uuid, entry.title.clone());
                 self.selected_entry = Some(entry);
@@ -185,7 +185,7 @@ impl Component for ColumnView {
                 self.edited_entry = None;
                 self.rebuild_columns(widgets, &sender);
             }
-            ColumnViewInput::NavigateToDepth(depth) => {
+            EntryBrowserInput::NavigateToDepth(depth) => {
                 self.nav_path.truncate(depth);
                 if depth == 0 {
                     self.current_entries.clear();
@@ -199,19 +199,19 @@ impl Component for ColumnView {
                 self.password_visible = false;
                 self.rebuild_columns(widgets, &sender);
             }
-            ColumnViewInput::TogglePasswordVisible => {
+            EntryBrowserInput::TogglePasswordVisible => {
                 self.password_visible = !self.password_visible;
                 self.rebuild_columns(widgets, &sender);
             }
-            ColumnViewInput::CopyField(value) => {
+            EntryBrowserInput::CopyField(value) => {
                 if let Some(display) = gdk::Display::default() {
                     display.clipboard().set_text(&value);
                 }
             }
-            ColumnViewInput::AddEntry => {
-                let _ = sender.output(ColumnViewOutput::AddEntry);
+            EntryBrowserInput::AddEntry => {
+                let _ = sender.output(EntryBrowserOutput::AddEntry);
             }
-            ColumnViewInput::EditEntry => {
+            EntryBrowserInput::EditEntry => {
                 // Enter inline edit mode
                 if let Some(ref entry) = self.selected_entry {
                     self.editing = true;
@@ -219,69 +219,69 @@ impl Component for ColumnView {
                     self.rebuild_columns(widgets, &sender);
                 }
             }
-            ColumnViewInput::EnterEditMode => {
+            EntryBrowserInput::EnterEditMode => {
                 if let Some(ref entry) = self.selected_entry {
                     self.editing = true;
                     self.edited_entry = Some(entry.clone());
                     self.rebuild_columns(widgets, &sender);
                 }
             }
-            ColumnViewInput::ExitEditMode(save) => {
+            EntryBrowserInput::ExitEditMode(save) => {
                 if save {
                     if let Some(ref edited) = self.edited_entry {
                         // Update selected_entry with edits
                         self.selected_entry = Some(edited.clone());
-                        let _ = sender.output(ColumnViewOutput::EntryEdited(edited.clone()));
+                        let _ = sender.output(EntryBrowserOutput::EntryEdited(edited.clone()));
                     }
                 }
                 self.editing = false;
                 self.edited_entry = None;
                 self.rebuild_columns(widgets, &sender);
             }
-            ColumnViewInput::EditTitle(title) => {
+            EntryBrowserInput::EditTitle(title) => {
                 if let Some(ref mut entry) = self.edited_entry {
                     entry.title = title;
                 }
             }
-            ColumnViewInput::EditUsername(username) => {
+            EntryBrowserInput::EditUsername(username) => {
                 if let Some(ref mut entry) = self.edited_entry {
                     entry.username = username;
                 }
             }
-            ColumnViewInput::EditPassword(password) => {
+            EntryBrowserInput::EditPassword(password) => {
                 if let Some(ref mut entry) = self.edited_entry {
                     entry.password = password;
                 }
             }
-            ColumnViewInput::EditUrl(url) => {
+            EntryBrowserInput::EditUrl(url) => {
                 if let Some(ref mut entry) = self.edited_entry {
                     entry.url = url;
                 }
             }
-            ColumnViewInput::EditNotes(notes) => {
+            EntryBrowserInput::EditNotes(notes) => {
                 if let Some(ref mut entry) = self.edited_entry {
                     entry.notes = notes;
                 }
             }
-            ColumnViewInput::DeleteEntry => {
+            EntryBrowserInput::DeleteEntry => {
                 if let Some(ref entry) = self.selected_entry {
-                    let _ = sender.output(ColumnViewOutput::DeleteEntry(entry.uuid.clone()));
+                    let _ = sender.output(EntryBrowserOutput::DeleteEntry(entry.uuid.clone()));
                 }
             }
-            ColumnViewInput::SaveAttachment(filename) => {
+            EntryBrowserInput::SaveAttachment(filename) => {
                 if let Some(ref entry) = self.selected_entry {
                     if let Some(att) = entry.attachments.iter().find(|a| a.filename == filename) {
-                        let _ = sender.output(ColumnViewOutput::SaveAttachment {
+                        let _ = sender.output(EntryBrowserOutput::SaveAttachment {
                             filename: att.filename.clone(),
                             data: att.data.clone(),
                         });
                     }
                 }
             }
-            ColumnViewInput::OpenAttachment(filename) => {
+            EntryBrowserInput::OpenAttachment(filename) => {
                 if let Some(ref entry) = self.selected_entry {
                     if let Some(att) = entry.attachments.iter().find(|a| a.filename == filename) {
-                        let _ = sender.output(ColumnViewOutput::OpenAttachment {
+                        let _ = sender.output(EntryBrowserOutput::OpenAttachment {
                             filename: att.filename.clone(),
                             data: att.data.clone(),
                         });
@@ -292,7 +292,7 @@ impl Component for ColumnView {
     }
 }
 
-impl ColumnView {
+impl EntryBrowser {
     /// Rebuild all columns based on current navigation state.
     fn rebuild_columns(&self, widgets: &mut <Self as Component>::Widgets, sender: &ComponentSender<Self>) {
         // Clear existing columns
@@ -323,7 +323,7 @@ impl ColumnView {
             let depth = i + 1;
             let sender_clone = sender.clone();
             btn.connect_clicked(move |_| {
-                sender_clone.input(ColumnViewInput::NavigateToDepth(depth));
+                sender_clone.input(EntryBrowserInput::NavigateToDepth(depth));
             });
             widgets.breadcrumb_bar.append(&btn);
         }
@@ -359,7 +359,7 @@ impl ColumnView {
         add_btn.set_tooltip_text(Some("Add Entry"));
         let sender_clone = sender.clone();
         add_btn.connect_clicked(move |_| {
-            sender_clone.input(ColumnViewInput::AddEntry);
+            sender_clone.input(EntryBrowserInput::AddEntry);
         });
         toolbar.append(&add_btn);
 
@@ -372,6 +372,7 @@ impl ColumnView {
         scrolled.set_hscrollbar_policy(gtk4::PolicyType::Never);
 
         let list_box = gtk4::ListBox::new();
+        list_box.add_css_class("navigation-sidebar");
         list_box.set_selection_mode(gtk4::SelectionMode::Single);
         list_box.set_margin_all(8);
 
@@ -429,7 +430,7 @@ impl ColumnView {
         list_box.connect_row_activated(move |_, row| {
             if let Some(name) = row.widget_name().as_str().strip_prefix("entry-") {
                 if let Some(entry) = entries.iter().find(|e| e.uuid == name) {
-                    sender_clone.input(ColumnViewInput::SelectEntry {
+                    sender_clone.input(EntryBrowserInput::SelectEntry {
                         uuid: entry.uuid.clone(),
                         entry: entry.clone(),
                     });
@@ -460,14 +461,14 @@ impl ColumnView {
             save_btn.add_css_class("suggested-action");
             let sender_clone = sender.clone();
             save_btn.connect_clicked(move |_| {
-                sender_clone.input(ColumnViewInput::ExitEditMode(true));
+                sender_clone.input(EntryBrowserInput::ExitEditMode(true));
             });
             toolbar.append(&save_btn);
 
             let cancel_btn = gtk4::Button::with_label("Cancel");
             let sender_clone = sender.clone();
             cancel_btn.connect_clicked(move |_| {
-                sender_clone.input(ColumnViewInput::ExitEditMode(false));
+                sender_clone.input(EntryBrowserInput::ExitEditMode(false));
             });
             toolbar.append(&cancel_btn);
         } else {
@@ -477,7 +478,7 @@ impl ColumnView {
             edit_btn.set_tooltip_text(Some("Edit Entry"));
             let sender_clone = sender.clone();
             edit_btn.connect_clicked(move |_| {
-                sender_clone.input(ColumnViewInput::EditEntry);
+                sender_clone.input(EntryBrowserInput::EditEntry);
             });
             toolbar.append(&edit_btn);
 
@@ -486,7 +487,7 @@ impl ColumnView {
             delete_btn.set_tooltip_text(Some("Delete Entry"));
             let sender_clone = sender.clone();
             delete_btn.connect_clicked(move |_| {
-                sender_clone.input(ColumnViewInput::DeleteEntry);
+                sender_clone.input(EntryBrowserInput::DeleteEntry);
             });
             toolbar.append(&delete_btn);
         }
@@ -509,12 +510,12 @@ impl ColumnView {
 
             // Title field
             self.add_edit_field(&details_box, "Title", &edited.title, sender, |_s, text| {
-                ColumnViewInput::EditTitle(text)
+                EntryBrowserInput::EditTitle(text)
             });
 
             // Username field
             self.add_edit_field(&details_box, "Username", &edited.username, sender, |_s, text| {
-                ColumnViewInput::EditUsername(text)
+                EntryBrowserInput::EditUsername(text)
             });
 
             // Password field
@@ -522,7 +523,7 @@ impl ColumnView {
 
             // URL field
             self.add_edit_field(&details_box, "URL", &edited.url, sender, |_s, text| {
-                ColumnViewInput::EditUrl(text)
+                EntryBrowserInput::EditUrl(text)
             });
 
             // Notes field
@@ -618,7 +619,7 @@ impl ColumnView {
                         let sender_clone = sender.clone();
                         copy_btn.connect_clicked(move |_| {
                             if let Ok(code) = totp_copy.value_now() {
-                                sender_clone.input(ColumnViewInput::CopyField(code.code));
+                                sender_clone.input(EntryBrowserInput::CopyField(code.code));
                             }
                         });
                         value_row.append(&copy_btn);
@@ -700,7 +701,7 @@ impl ColumnView {
                     let filename = att.filename.clone();
                     let sender_clone = sender.clone();
                     save_btn.connect_clicked(move |_| {
-                        sender_clone.input(ColumnViewInput::SaveAttachment(filename.clone()));
+                        sender_clone.input(EntryBrowserInput::SaveAttachment(filename.clone()));
                     });
                     row.append(&save_btn);
 
@@ -710,7 +711,7 @@ impl ColumnView {
                     let filename = att.filename.clone();
                     let sender_clone = sender.clone();
                     open_btn.connect_clicked(move |_| {
-                        sender_clone.input(ColumnViewInput::OpenAttachment(filename.clone()));
+                        sender_clone.input(EntryBrowserInput::OpenAttachment(filename.clone()));
                     });
                     row.append(&open_btn);
 
@@ -760,7 +761,7 @@ impl ColumnView {
             toggle_btn.set_tooltip_text(Some("Toggle visibility"));
             let sender_clone = sender.clone();
             toggle_btn.connect_clicked(move |_| {
-                sender_clone.input(ColumnViewInput::TogglePasswordVisible);
+                sender_clone.input(EntryBrowserInput::TogglePasswordVisible);
             });
             value_row.append(&toggle_btn);
         }
@@ -771,7 +772,7 @@ impl ColumnView {
         let copy_value = real_value.unwrap_or(value).to_string();
         let sender_clone = sender.clone();
         copy_btn.connect_clicked(move |_| {
-            sender_clone.input(ColumnViewInput::CopyField(copy_value.clone()));
+            sender_clone.input(EntryBrowserInput::CopyField(copy_value.clone()));
         });
         value_row.append(&copy_btn);
 
@@ -789,7 +790,7 @@ impl ColumnView {
         make_input: F,
     )
     where
-        F: Fn(&ComponentSender<Self>, String) -> ColumnViewInput + 'static,
+        F: Fn(&ComponentSender<Self>, String) -> EntryBrowserInput + 'static,
     {
         let row = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
 
@@ -835,7 +836,7 @@ impl ColumnView {
         let sender_clone = sender.clone();
         entry.connect_changed(move |e| {
             let text = e.text().to_string();
-            sender_clone.input(ColumnViewInput::EditPassword(text));
+            sender_clone.input(EntryBrowserInput::EditPassword(text));
         });
 
         row.append(&entry);
@@ -868,7 +869,7 @@ impl ColumnView {
         let sender_clone = sender.clone();
         text_view.buffer().connect_changed(move |buf| {
             let text = buf.text(&buf.start_iter(), &buf.end_iter(), false).to_string();
-            sender_clone.input(ColumnViewInput::EditNotes(text));
+            sender_clone.input(EntryBrowserInput::EditNotes(text));
         });
 
         frame.set_child(Some(&text_view));

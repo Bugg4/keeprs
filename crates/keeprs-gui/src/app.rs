@@ -1,6 +1,6 @@
 //! Main application component.
 
-use crate::components::column_view::{ColumnView, ColumnViewInput, ColumnViewOutput};
+use crate::components::entry_browser::{EntryBrowser, EntryBrowserInput, EntryBrowserOutput};
 use crate::components::entry_edit::{EntryEdit, EntryEditInput, EntryEditOutput};
 use crate::components::search_palette::{SearchPalette, SearchPaletteInput, SearchPaletteOutput};
 use crate::components::sidebar::{Sidebar, SidebarInit, SidebarInput, SidebarOutput};
@@ -71,7 +71,7 @@ pub struct App {
     unlock: Controller<UnlockDialog>,
     search_palette: Controller<SearchPalette>,
     sidebar: Controller<Sidebar>,
-    column_view: Controller<ColumnView>,
+    entry_browser: Controller<EntryBrowser>,
     entry_edit: Controller<EntryEdit>,
 }
 
@@ -124,9 +124,9 @@ impl Component for App {
                             model.sidebar.widget().clone() {},
                         },
 
-                        // Right side: column view
+                        // Right side: entry browser
                         #[wrap(Some)]
-                        set_end_child = model.column_view.widget(),
+                        set_end_child = model.entry_browser.widget(),
                     },
 
                     add_overlay = model.search_palette.widget(),
@@ -180,14 +180,14 @@ impl Component for App {
                 }
             });
 
-        let column_view = ColumnView::builder()
+        let entry_browser = EntryBrowser::builder()
             .launch(())
             .forward(sender.input_sender(), |output| match output {
-                ColumnViewOutput::EntryEdited(entry) => AppInput::EntrySaved(entry),
-                ColumnViewOutput::DeleteEntry(uuid) => AppInput::DeleteEntry(uuid),
-                ColumnViewOutput::AddEntry => AppInput::AddEntry,
-                ColumnViewOutput::SaveAttachment { filename, data } => AppInput::SaveAttachment { filename, data },
-                ColumnViewOutput::OpenAttachment { filename, data } => AppInput::OpenAttachment { filename, data },
+                EntryBrowserOutput::EntryEdited(entry) => AppInput::EntrySaved(entry),
+                EntryBrowserOutput::DeleteEntry(uuid) => AppInput::DeleteEntry(uuid),
+                EntryBrowserOutput::AddEntry => AppInput::AddEntry,
+                EntryBrowserOutput::SaveAttachment { filename, data } => AppInput::SaveAttachment { filename, data },
+                EntryBrowserOutput::OpenAttachment { filename, data } => AppInput::OpenAttachment { filename, data },
             });
 
         let entry_edit = EntryEdit::builder()
@@ -206,7 +206,7 @@ impl Component for App {
             unlock,
             search_palette,
             sidebar,
-            column_view,
+            entry_browser,
             entry_edit,
         };
 
@@ -277,8 +277,8 @@ impl Component for App {
                         self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
                         self.search_palette.emit(SearchPaletteInput::SetRootGroup(root.clone()));
 
-                        // Set root group in column view
-                        self.column_view.emit(ColumnViewInput::SetRootGroup(root.clone()));
+                        // Set root group in entry browser
+                        self.entry_browser.emit(EntryBrowserInput::SetRootGroup(root.clone()));
 
                         // Switch to main view
                         widgets.main_stack.set_visible_child_name("main");
@@ -295,10 +295,10 @@ impl Component for App {
             AppInput::GroupSelected(uuid) => {
                 self.current_group_uuid = Some(uuid.clone());
 
-                // Find the group and show its entries in column view
+                // Find the group and show its entries in entry browser
                 if let Some(ref root) = self.root_group {
                     if let Some(group) = find_group_by_uuid(root, &uuid) {
-                        self.column_view.emit(ColumnViewInput::SelectGroup {
+                        self.entry_browser.emit(EntryBrowserInput::SelectGroup {
                             uuid: uuid.clone(),
                             name: group.name.clone(),
                             group: group.clone(),
@@ -311,7 +311,7 @@ impl Component for App {
                 // Highlight in sidebar
                 self.sidebar.emit(SidebarInput::UpdateSelection(uuid.clone()));
                 
-                self.column_view.emit(ColumnViewInput::SelectGroup { uuid, name, group });
+                self.entry_browser.emit(EntryBrowserInput::SelectGroup { uuid, name, group });
             }
             AppInput::SearchEntrySelected { entry, group_uuid } => {
                 // Select the group first, then the entry
@@ -322,13 +322,13 @@ impl Component for App {
                 
                 if let Some(ref root) = self.root_group {
                     if let Some(group) = find_group_by_uuid(root, &group_uuid) {
-                        self.column_view.emit(ColumnViewInput::SelectGroup {
+                        self.entry_browser.emit(EntryBrowserInput::SelectGroup {
                             uuid: group_uuid.clone(),
                             name: group.name.clone(),
                             group: group.clone(),
                         });
                         // Then select the entry
-                        self.column_view.emit(ColumnViewInput::SelectEntry {
+                        self.entry_browser.emit(EntryBrowserInput::SelectEntry {
                             uuid: entry.uuid.clone(),
                             entry,
                         });
