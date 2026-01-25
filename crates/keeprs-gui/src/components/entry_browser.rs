@@ -11,6 +11,7 @@ use gtk4::cairo::Context;
 use keepass::db::TOTP;
 use relm4::prelude::*;
 use std::rc::Rc;
+use zxcvbn::{zxcvbn, Score};
 
 /// Minimum width for each column.
 const COLUMN_MIN_WIDTH: i32 = 250;
@@ -873,57 +874,28 @@ impl EntryBrowser {
         container.append(&row);
     }
 
-    /// Calculate password entropy in bits.
-    fn calculate_entropy(password: &str) -> f64 {
+    /// Get password strength info using zxcvbn.
+    /// Returns (score 0-4, guesses_log10, strength_label, css_class).
+    fn get_password_strength(password: &str) -> (u8, f64, &'static str, &'static str) {
         if password.is_empty() {
-            return 0.0;
+            return (0, 0.0, "Empty", "error");
         }
 
-        // Calculate character set size based on what's in the password
-        let mut charset_size = 0u32;
-        let mut has_lower = false;
-        let mut has_upper = false;
-        let mut has_digit = false;
-        let mut has_special = false;
+        let entropy = zxcvbn(password, &[]);
+        let score = entropy.score();
+        let guesses_log10 = entropy.guesses_log10();
 
-        for c in password.chars() {
-            if c.is_ascii_lowercase() {
-                has_lower = true;
-            } else if c.is_ascii_uppercase() {
-                has_upper = true;
-            } else if c.is_ascii_digit() {
-                has_digit = true;
-            } else {
-                has_special = true;
-            }
-        }
+        // Score is 0-4, map to labels
+        let (score_num, label, css_class) = match score {
+            Score::Zero => (0, "Very Weak", "error"),
+            Score::One => (1, "Weak", "error"),
+            Score::Two => (2, "Fair", "warning"),
+            Score::Three => (3, "Strong", "success"),
+            Score::Four => (4, "Very Strong", "success"),
+            _ => (2, "Unknown", "warning"), // Fallback for any future variants
+        };
 
-        if has_lower { charset_size += 26; }
-        if has_upper { charset_size += 26; }
-        if has_digit { charset_size += 10; }
-        if has_special { charset_size += 32; } // Common special characters
-
-        if charset_size == 0 {
-            return 0.0;
-        }
-
-        // Entropy = length * log2(charset_size)
-        password.len() as f64 * (charset_size as f64).log2()
-    }
-
-    /// Get strength label and color based on entropy.
-    fn get_strength_info(entropy: f64) -> (&'static str, &'static str) {
-        if entropy >= 80.0 {
-            ("Very Strong", "success")
-        } else if entropy >= 60.0 {
-            ("Strong", "success")
-        } else if entropy >= 40.0 {
-            ("Good", "warning")
-        } else if entropy >= 28.0 {
-            ("Weak", "warning")
-        } else {
-            ("Very Weak", "error")
-        }
+        (score_num, guesses_log10, label, css_class)
     }
 
     /// Add a password row with visibility toggle, copy button, and entropy bar.
@@ -981,8 +953,7 @@ impl EntryBrowser {
 
         // Entropy bar (only if enabled in config)
         if self.show_entropy_bar {
-            let entropy = Self::calculate_entropy(password);
-            let (strength_label, strength_class) = Self::get_strength_info(entropy);
+            let (score, guesses_log10, strength_label, strength_class) = Self::get_password_strength(password);
 
             let entropy_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
             entropy_row.set_margin_top(2);
@@ -991,8 +962,8 @@ impl EntryBrowser {
             let progress_bar = gtk4::ProgressBar::new();
             progress_bar.set_hexpand(true);
             progress_bar.set_valign(gtk4::Align::Center);
-            // Normalize to 0-1 (cap at 128 bits as "max")
-            let fraction = (entropy / 128.0).min(1.0);
+            // Score is 0-4, normalize to 0-1
+            let fraction = score as f64 / 4.0;
             progress_bar.set_fraction(fraction);
             
             // Add appropriate CSS class for color
@@ -1005,8 +976,8 @@ impl EntryBrowser {
             
             entropy_row.append(&progress_bar);
 
-            // Entropy text
-            let entropy_text = gtk4::Label::new(Some(&format!("{:.0} bits", entropy)));
+            // Entropy text (show guesses_log10 which represents bits of entropy)
+            let entropy_text = gtk4::Label::new(Some(&format!("{:.0} bits", guesses_log10 * 3.32))); // log10 to log2 conversion
             entropy_text.add_css_class("dim-label");
             entropy_text.add_css_class("caption");
             entropy_row.append(&entropy_text);
