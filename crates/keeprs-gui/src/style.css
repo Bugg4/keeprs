@@ -79,3 +79,14 @@ label.warning {
 label.error {
     color: @error_color;
 }
+
+/* Favicon box styling */
+.favicon-box {
+    min-width: 16px;
+    min-height: 16px;
+    margin-right: 8px;
+    border-radius: 4px;
+    /* Optional: background/container styling if you want a box feeling */
+    /* background: @unfocused_borders; */ 
+    padding: 2px;
+}

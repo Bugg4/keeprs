@@ -11,7 +11,9 @@ use gtk4::cairo::Context;
 use keepass::db::TOTP;
 use relm4::prelude::*;
 use std::rc::Rc;
+use std::cell::RefCell;
 use zxcvbn::{zxcvbn, Score};
+use url::Url;
 
 /// Minimum width for each column.
 const COLUMN_MIN_WIDTH: i32 = 250;
@@ -57,6 +59,8 @@ pub enum EntryBrowserInput {
     EditUrl(String),
     /// Edit notes field.
     EditNotes(String),
+    /// Favicon loaded for URL.
+    FaviconLoaded { url: String, data: Vec<u8> },
 }
 
 /// Output messages from entry browser.
@@ -92,6 +96,8 @@ pub struct EntryBrowser {
     edited_entry: Option<Entry>,
     /// Whether to show the password entropy bar.
     show_entropy_bar: bool,
+    /// Current favicon image widget (for updating when favicon loads).
+    favicon_image: Rc<RefCell<Option<gtk4::Image>>>,
 }
 
 #[relm4::component(pub)]
@@ -153,6 +159,7 @@ impl Component for EntryBrowser {
             editing: false,
             edited_entry: None,
             show_entropy_bar,
+            favicon_image: Rc::new(RefCell::new(None)),
         };
 
         let widgets = view_output!();
@@ -304,6 +311,22 @@ impl Component for EntryBrowser {
                         tracing::error!("Failed to open URL {}: {}", url, e);
                     }
                 });
+            }
+            EntryBrowserInput::FaviconLoaded { url: _, data } => {
+                // Update favicon image if widget reference exists
+                if let Some(image_widget) = self.favicon_image.borrow().as_ref() {
+                    let bytes = glib::Bytes::from(&data);
+                    let stream = gtk4::gio::MemoryInputStream::from_bytes(&bytes);
+                    let pixbuf = gdk::gdk_pixbuf::Pixbuf::from_stream(&stream, None::<&gtk4::gio::Cancellable>);
+                    
+                    if let Ok(pixbuf) = pixbuf {
+                        // Scale to reasonable icon size if needed (e.g. 16x16 or 24x24)
+                         // But for now let's just use it as is, or maybe scale it twice so it looks good on high dpi
+                        let texture = gdk::Texture::for_pixbuf(&pixbuf);
+                        image_widget.set_paintable(Some(&texture));
+                        image_widget.set_visible(true);
+                    }
+                }
             }
         }
     }
@@ -841,6 +864,50 @@ impl EntryBrowser {
         row.append(&label_widget);
 
         let value_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+
+        // Favicon container
+        let favicon_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        favicon_box.add_css_class("favicon-box"); // For theming
+        
+        let favicon = gtk4::Image::new();
+        favicon.set_pixel_size(16);
+        favicon.set_visible(false); // Hidden until loaded
+        favicon_box.append(&favicon);
+        value_row.append(&favicon_box);
+        
+        // Store reference to update later
+        *self.favicon_image.borrow_mut() = Some(favicon);
+
+        // Fetch favicon in background
+        let url_string = url.to_string();
+        let sender_clone = sender.clone();
+        
+        std::thread::spawn(move || {
+            // TODO: Implement favicon caching to ~/.local/share/keeprs/favicons
+            // Check cache first before fetching network
+            
+            // Very basic favicon fetching: try /favicon.ico at domain root
+            // In a real app we'd parse HTML for <link rel="icon">
+            if let Ok(parsed) = Url::parse(&url_string) {
+                 if let Some(domain) = parsed.domain() {
+                    let favicon_url = format!("{}://{}/favicon.ico", parsed.scheme(), domain);
+                    
+                    // Use reqwest to fetch
+                    if let Ok(response) = reqwest::blocking::get(&favicon_url) {
+                         if response.status().is_success() {
+                             if let Ok(bytes) = response.bytes() {
+                                 // TODO: Save to cache here
+                                 
+                                 sender_clone.input(EntryBrowserInput::FaviconLoaded { 
+                                     url: url_string, 
+                                     data: bytes.to_vec() 
+                                 });
+                             }
+                         }
+                    }
+                 }
+            }
+        });
 
         let value_label = gtk4::Label::new(Some(url));
         value_label.set_halign(gtk4::Align::Start);
