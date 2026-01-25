@@ -40,6 +40,8 @@ pub enum EntryBrowserInput {
     SaveAttachment(String),
     /// Open an attachment.
     OpenAttachment(String),
+    /// Open URL in default browser.
+    OpenUrl(String),
     /// Enter inline edit mode.
     EnterEditMode,
     /// Exit edit mode (true = save, false = cancel).
@@ -287,6 +289,17 @@ impl Component for EntryBrowser {
                         });
                     }
                 }
+            }
+            EntryBrowserInput::OpenUrl(url) => {
+                // Open URL in default browser using xdg-open
+                std::thread::spawn(move || {
+                    if let Err(e) = std::process::Command::new("xdg-open")
+                        .arg(&url)
+                        .spawn()
+                    {
+                        tracing::error!("Failed to open URL {}: {}", url, e);
+                    }
+                });
             }
         }
     }
@@ -653,7 +666,7 @@ impl EntryBrowser {
             }
 
             if !entry.url.is_empty() {
-                self.add_field_row(&details_box, "URL", &entry.url, false, None, sender);
+                self.add_url_row(&details_box, &entry.url, sender);
             }
 
             if !entry.notes.is_empty() {
@@ -773,6 +786,54 @@ impl EntryBrowser {
         let sender_clone = sender.clone();
         copy_btn.connect_clicked(move |_| {
             sender_clone.input(EntryBrowserInput::CopyField(copy_value.clone()));
+        });
+        value_row.append(&copy_btn);
+
+        row.append(&value_row);
+        container.append(&row);
+    }
+
+    /// Add a URL row with copy and open buttons.
+    fn add_url_row(
+        &self,
+        container: &gtk4::Box,
+        url: &str,
+        sender: &ComponentSender<Self>,
+    ) {
+        let row = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+
+        let label_widget = gtk4::Label::new(Some("URL"));
+        label_widget.add_css_class("dim-label");
+        label_widget.set_halign(gtk4::Align::Start);
+        row.append(&label_widget);
+
+        let value_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+
+        let value_label = gtk4::Label::new(Some(url));
+        value_label.set_halign(gtk4::Align::Start);
+        value_label.set_hexpand(true);
+        value_label.set_selectable(true);
+        value_row.append(&value_label);
+
+        // Open in browser button
+        let open_btn = gtk4::Button::from_icon_name("web-browser-symbolic");
+        open_btn.add_css_class("flat");
+        open_btn.set_tooltip_text(Some("Open in browser"));
+        let url_clone = url.to_string();
+        let sender_clone = sender.clone();
+        open_btn.connect_clicked(move |_| {
+            sender_clone.input(EntryBrowserInput::OpenUrl(url_clone.clone()));
+        });
+        value_row.append(&open_btn);
+
+        // Copy button
+        let copy_btn = gtk4::Button::from_icon_name("edit-copy-symbolic");
+        copy_btn.add_css_class("flat");
+        copy_btn.set_tooltip_text(Some("Copy to clipboard"));
+        let url_clone = url.to_string();
+        let sender_clone = sender.clone();
+        copy_btn.connect_clicked(move |_| {
+            sender_clone.input(EntryBrowserInput::CopyField(url_clone.clone()));
         });
         value_row.append(&copy_btn);
 
