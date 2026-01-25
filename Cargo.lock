@@ -1437,6 +1437,7 @@ dependencies = [
  "clap",
  "crossterm",
  "fuzzy-matcher",
+ "keepass",
  "keeprs-core",
  "ratatui",
  "tracing",

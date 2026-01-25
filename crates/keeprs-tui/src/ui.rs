@@ -1,6 +1,8 @@
 //! UI rendering with Ratatui.
 
 use crate::app::{App, AppState, Focus, InputMode, TreeItemKind};
+use keepass::db::TOTP;
+use std::time::SystemTime;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     prelude::*,
@@ -153,47 +155,92 @@ fn render_entry_view(frame: &mut Frame, app: &App, area: Rect) {
 
     if let Some(ref entry) = app.selected_entry {
         // Split into fields
+        // Split into fields
+        let mut constraints = vec![
+            Constraint::Length(2), // Title
+            Constraint::Length(2), // Username
+            Constraint::Length(2), // Password
+        ];
+
+        let has_otp = entry.otp.is_some();
+        if has_otp {
+            constraints.push(Constraint::Length(2)); // OTP
+        }
+
+        constraints.extend_from_slice(&[
+            Constraint::Length(2), // URL
+            Constraint::Min(3),    // Notes
+            Constraint::Length(1), // Help line
+        ]);
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
-            .constraints([
-                Constraint::Length(2), // Title
-                Constraint::Length(2), // Username
-                Constraint::Length(2), // Password
-                Constraint::Length(2), // URL
-                Constraint::Min(3),    // Notes
-                Constraint::Length(1), // Help line
-            ])
+            .constraints(constraints)
             .split(inner);
 
+        let mut chunk_idx = 0;
+
         // Title
-        render_field(frame, "Title", &entry.title, chunks[0], Color::White);
+        render_field(frame, "Title", &entry.title, chunks[chunk_idx], Color::White);
+        chunk_idx += 1;
 
         // Username
-        render_field(frame, "Username", &entry.username, chunks[1], Color::Green);
+        render_field(frame, "Username", &entry.username, chunks[chunk_idx], Color::Green);
+        chunk_idx += 1;
 
         // Password (masked)
         let masked = "••••••••••••";
-        render_field(frame, "Password", masked, chunks[2], Color::Yellow);
+        render_field(frame, "Password", masked, chunks[chunk_idx], Color::Yellow);
+        chunk_idx += 1;
+
+        // OTP
+        if has_otp {
+            if let Some(otp_uri) = &entry.otp {
+                let otp_text = if let Ok(totp) = otp_uri.parse::<TOTP>() {
+                    if let Ok(code) = totp.value_now() {
+                        let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+                        let period = if totp.period > 0 { totp.period } else { 30 };
+                        let remaining = period - (now % period);
+                        
+                        // Compact spinner/gauge using vertical blocks
+                        let levels = [" ", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+                        let ratio = remaining as f64 / period as f64;
+                        let idx = (ratio * (levels.len() - 1) as f64).round() as usize;
+                        let spinner = levels.get(idx).unwrap_or(&" ");
+                        
+                        format!("{} {} ({}s)", code.code, spinner, remaining)
+                    } else {
+                        "Error generating code".to_string()
+                    }
+                } else {
+                    "Invalid OTP configuration".to_string()
+                };
+                render_field(frame, "OTP", &otp_text, chunks[chunk_idx], Color::Magenta);
+            }
+            chunk_idx += 1;
+        }
 
         // URL
-        render_field(frame, "URL", &entry.url, chunks[3], Color::Blue);
+        render_field(frame, "URL", &entry.url, chunks[chunk_idx], Color::Blue);
+        chunk_idx += 1;
 
         // Notes
         let notes_block = Block::default()
             .title(Span::styled(" Notes ", Style::default().fg(Color::DarkGray)));
-        let notes_inner = notes_block.inner(chunks[4]);
-        frame.render_widget(notes_block, chunks[4]);
+        let notes_inner = notes_block.inner(chunks[chunk_idx]);
+        frame.render_widget(notes_block, chunks[chunk_idx]);
 
         let notes = Paragraph::new(entry.notes.as_str())
             .style(Style::default().fg(Color::White))
             .wrap(Wrap { trim: true });
         frame.render_widget(notes, notes_inner);
+        chunk_idx += 1;
 
         // Help line
         let help = Paragraph::new("Tab: switch focus | /: search | q: quit")
             .style(Style::default().fg(Color::DarkGray));
-        frame.render_widget(help, chunks[5]);
+        frame.render_widget(help, chunks[chunk_idx]);
     } else {
         // No entry selected
         let message = Paragraph::new("Select an entry from the sidebar")
