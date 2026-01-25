@@ -592,10 +592,18 @@ impl EntryBrowser {
                         drawing_area.set_content_width(24);
                         drawing_area.set_content_height(24);
                         drawing_area.set_margin_end(8);
+                        drawing_area.set_has_tooltip(true);
+
+                        // Set initial tooltip
+                        {
+                            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                            let remaining = totp.period - (now % totp.period);
+                            drawing_area.set_tooltip_text(Some(&format!("{}s remaining", remaining)));
+                        }
 
                         let totp_draw = totp.clone();
 
-                        drawing_area.set_draw_func(move |_area: &gtk4::DrawingArea, cr: &Context, width: i32, height: i32| {
+                        drawing_area.set_draw_func(move |area: &gtk4::DrawingArea, cr: &Context, width: i32, height: i32| {
                             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
                             let period = totp_draw.period;
                             if period == 0 { return; }
@@ -607,13 +615,34 @@ impl EntryBrowser {
                             let center_y = height as f64 / 2.0;
                             let radius = f64::min(center_x, center_y);
 
-                            // Background Circle (Light Gray)
-                            cr.set_source_rgba(0.85, 0.85, 0.85, 1.0);
+                            // Get theme colors from style context
+                            let style_context = area.style_context();
+                            
+                            // Get background color for the track
+                            let bg_color = style_context.lookup_color("unfocused_borders");
+                            let (bg_r, bg_g, bg_b) = if let Some(color) = bg_color {
+                                (color.red() as f64, color.green() as f64, color.blue() as f64)
+                            } else {
+                                (0.85, 0.85, 0.85) // Fallback gray
+                            };
+
+                            // Get accent color for the progress
+                            let accent_color = style_context.lookup_color("accent_bg_color")
+                                .or_else(|| style_context.lookup_color("accent_color"))
+                                .or_else(|| style_context.lookup_color("theme_selected_bg_color"));
+                            let (acc_r, acc_g, acc_b) = if let Some(color) = accent_color {
+                                (color.red() as f64, color.green() as f64, color.blue() as f64)
+                            } else {
+                                (0.2, 0.6, 1.0) // Fallback blue
+                            };
+
+                            // Background Circle (theme border color)
+                            cr.set_source_rgba(bg_r, bg_g, bg_b, 1.0);
                             cr.arc(center_x, center_y, radius, 0.0, 2.0 * std::f64::consts::PI);
                             cr.fill().expect("Invalid cairo surface state");
 
-                            // Progress Pie (Blue)
-                            cr.set_source_rgba(0.2, 0.6, 1.0, 1.0);
+                            // Progress Pie (theme accent color)
+                            cr.set_source_rgba(acc_r, acc_g, acc_b, 1.0);
                             cr.move_to(center_x, center_y);
                             // Rotate -90 degrees (start at top)
                             let start_angle = -std::f64::consts::PI / 2.0;
@@ -653,6 +682,11 @@ impl EntryBrowser {
                                     if current_text.as_str() != code.code {
                                         code_label.set_markup(&format!("<span font_family=\"monospace\" size=\"large\">{}</span>", code.code));
                                     }
+                                    
+                                    // Update tooltip with remaining seconds
+                                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                                    let remaining = totp_timer.period - (now % totp_timer.period);
+                                    drawing_area.set_tooltip_text(Some(&format!("{}s remaining", remaining)));
                                     
                                     // Trigger redraw
                                     drawing_area.queue_draw();
