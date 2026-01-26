@@ -1713,6 +1713,7 @@ name = "keeprs-gui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "dirs",
  "dotenvy",
  "fuzzy-matcher",

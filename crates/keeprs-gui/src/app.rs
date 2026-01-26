@@ -91,6 +91,10 @@ pub struct App {
     state: AppState,
     config: Config,
     database: Option<Arc<RefCell<KeepassDatabase>>>,
+    db_filename: Option<String>,
+    entry_count: usize,
+    unsaved_changes: bool,
+    last_save_time: String,
     current_group_uuid: Option<String>,
     root_group: Option<Group>,
 
@@ -131,32 +135,125 @@ impl Component for App {
                 },
 
                 // Main view with sidebar and content, wrapped in Overlay for search palette
-                add_child = &gtk4::Overlay {
-                    #[wrap(Some)]
-                    #[name = "main_paned"]
-                    set_child = &gtk4::Paned {
-                        set_orientation: gtk4::Orientation::Horizontal,
-                        set_shrink_start_child: false, // Enforce minimum width
-                        set_resize_start_child: true, // Allow manual resizing
-                        set_resize_end_child: true,
-                        set_shrink_end_child: false,
+                add_child = &gtk4::Box {
+                    set_orientation: gtk4::Orientation::Vertical,
+                    set_spacing: 0,
 
-                        // Left side: Sidebar (folder tree)
+                    append = &gtk4::Overlay {
+                        set_vexpand: true,
                         #[wrap(Some)]
-                        set_start_child = &gtk4::Box {
-                            set_orientation: gtk4::Orientation::Vertical,
-                            set_vexpand: true,
-                            
-                            // Folder tree 
-                            model.sidebar.widget().clone() {},
+                        #[name = "main_paned"]
+                        set_child = &gtk4::Paned {
+                            set_orientation: gtk4::Orientation::Horizontal,
+                            set_shrink_start_child: false, // Enforce minimum width
+                            set_resize_start_child: true, // Allow manual resizing
+                            set_resize_end_child: true,
+                            set_shrink_end_child: false,
+    
+                            // Left side: Sidebar (folder tree)
+                            #[wrap(Some)]
+                            set_start_child = &gtk4::Box {
+                                set_orientation: gtk4::Orientation::Vertical,
+                                set_vexpand: true,
+                                
+                                // Folder tree 
+                                model.sidebar.widget().clone() {},
+                            },
+    
+                            // Right side: entry browser
+                            #[wrap(Some)]
+                            set_end_child = model.entry_browser.widget(),
                         },
-
-                        // Right side: entry browser
-                        #[wrap(Some)]
-                        set_end_child = model.entry_browser.widget(),
+    
+                        add_overlay = model.search_palette.widget(),
                     },
 
-                    add_overlay = model.search_palette.widget(),
+                    // Bottom info bar
+                    gtk4::Separator {
+                        set_orientation: gtk4::Orientation::Horizontal,
+                    },
+                    
+                    gtk4::CenterBox {
+                        set_margin_all: 4,
+                        set_margin_start: 8,
+                        set_margin_end: 8,
+                        set_hexpand: true, // Ensure it fills width for alignment
+                        
+                        // Left: Filename + Entry Count
+                        #[wrap(Some)]
+                        set_start_widget = &gtk4::Box {
+                            set_orientation: gtk4::Orientation::Horizontal,
+                            set_spacing: 16,
+                            
+                            // Database Name
+                            gtk4::Box {
+                                set_orientation: gtk4::Orientation::Horizontal,
+                                set_spacing: 6,
+                                
+                                gtk4::Image {
+                                    set_icon_name: Some("folder-open-symbolic"),
+                                    add_css_class: "dim-label",
+                                },
+                                gtk4::Label {
+                                    #[watch]
+                                    set_label: model.db_filename.as_deref().unwrap_or(""),
+                                    add_css_class: "dim-label",
+                                },
+                            },
+                            
+                            // Entry Count
+                            gtk4::Box {
+                                set_orientation: gtk4::Orientation::Horizontal,
+                                set_spacing: 6,
+                                
+                                gtk4::Image {
+                                    set_icon_name: Some("view-list-symbolic"),
+                                    add_css_class: "dim-label",
+                                },
+                                gtk4::Label {
+                                    #[watch]
+                                    set_label: &format!("{} entries", model.entry_count),
+                                    add_css_class: "dim-label",
+                                },
+                            },
+                        },
+
+                        // Right: Unsaved Indicator + Last saved time
+                        #[wrap(Some)]
+                        set_end_widget = &gtk4::Box {
+                            set_orientation: gtk4::Orientation::Horizontal,
+                            set_spacing: 16,
+
+                            // Unsaved indicator
+                            gtk4::Label {
+                                #[watch]
+                                set_label: if model.unsaved_changes { "●" } else { "No changes" },
+                                add_css_class: "dim-label",
+                            },
+
+                            // Last Save Time
+                            gtk4::Box {
+                                set_orientation: gtk4::Orientation::Horizontal,
+                                set_spacing: 6,
+                                
+                                gtk4::Image {
+                                    set_icon_name: Some("document-save-symbolic"),
+                                    add_css_class: "dim-label",
+                                    #[watch]
+                                    set_visible: !model.last_save_time.is_empty(),
+                                },
+                                gtk4::Label {
+                                    #[watch]
+                                    set_label: &if !model.last_save_time.is_empty() {
+                                        format!("Last saved: {}", model.last_save_time)
+                                    } else {
+                                        String::new()
+                                    },
+                                    add_css_class: "dim-label",
+                                }
+                            }
+                        }
+                    }
                 } -> {
                     set_name: "main",
                 },
@@ -228,6 +325,10 @@ impl Component for App {
             state: AppState::Locked,
             config,
             database: None,
+            db_filename: None,
+            entry_count: 0,
+            unsaved_changes: false,
+            last_save_time: String::new(),
             current_group_uuid: None,
             root_group: None,
             unlock,
@@ -251,6 +352,11 @@ impl Component for App {
                          model.root_group = Some(root.clone());
                          model.database = Some(Arc::new(RefCell::new(db)));
                          model.state = AppState::Unlocked;
+                         model.entry_count = count_entries(&root);
+                         model.db_filename = std::path::Path::new(&model.config.database_path)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .map(|s| s.to_string());
                          
                          // We need to send these signals *after* widgets are created, 
                          // but we can't emit to controllers before they are fully initialized/mapped sometimes?
@@ -325,6 +431,12 @@ impl Component for App {
         
         let sender_clone = sender.clone();
         key_controller.connect_key_pressed(move |_, key, _keycode, state| {
+            // Check for Ctrl+S
+            if (key == gdk::Key::s || key == gdk::Key::S) 
+                && state.contains(gdk::ModifierType::CONTROL_MASK) {
+                sender_clone.input(AppInput::SaveDatabase);
+                return gtk4::glib::Propagation::Stop;
+            }
             // Check for Ctrl+P
             if (key == gdk::Key::p || key == gdk::Key::P) 
                 && state.contains(gdk::ModifierType::CONTROL_MASK) {
@@ -369,6 +481,11 @@ impl Component for App {
                         self.root_group = Some(root.clone());
                         self.database = Some(Arc::new(RefCell::new(db)));
                         self.state = AppState::Unlocked;
+                        self.entry_count = count_entries(&root);
+                        self.db_filename = std::path::Path::new(&self.config.database_path)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .map(|s| s.to_string());
 
                         // Populate sidebar and search
                         self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
@@ -478,14 +595,29 @@ impl Component for App {
                         return;
                     }
 
-                    // Save database to disk
-                    if let Err(e) = db.save() {
-                        tracing::error!("Failed to save database: {}", e);
-                         // TODO: Show error dialog
-                         return;
-                    }
+                    // DO NOT auto-save to disk
+                    // if let Err(e) = db.save() { ... }
                     
-                    tracing::info!("Database saved successfully");
+                    tracing::info!("Entry updated in memory");
+                }
+                
+                // Mark as unsaved
+                self.unsaved_changes = true;
+                
+                // Update count? If we added/removed (not yet supported via this message), we'd need to recount.
+                // For safety, let's recount.
+                if let Some(ref root) = self.root_group {
+                     // Wait, self.root_group might be stale if we don't reload it from DB?
+                     // keeprs-core keeps them in sync? 
+                     // Usually we need to reload the group tree from the DB or update the in-memory tree.
+                     // Assuming `db.update_entry` updates the in-memory structure referenced by `self.root_group`?
+                     // Actually `db.root_group()` returns a clone in `init` and `PasswordSubmitted`.
+                     // The `self.root_group` is a detached clone. `db` has its own copy.
+                     // We need to update `self.root_group` to reflect changes if we want the UI tree to update.
+                     // But strictly for *counting*, we can ask the DB.
+                     
+                     // For now, let's just assume count didn't change on EDIT.
+                     // On ADD/DELETE we will handle it elsewhere or recount.
                 }
 
                 // Refresh the view and re-select the entry
@@ -552,6 +684,10 @@ impl Component for App {
                 if let Some(ref db) = self.database {
                     if let Err(e) = db.borrow().save() {
                         tracing::error!("Failed to save database: {}", e);
+                    } else {
+                        self.unsaved_changes = false;
+                        self.last_save_time = chrono::Local::now().format("%H:%M").to_string();
+                        tracing::info!("Database saved manually");
                     }
                 }
             }
@@ -597,4 +733,13 @@ fn find_entry_and_group<'a>(group: &'a Group, entry_uuid: &str) -> Option<(&'a G
         }
     }
     None
+}
+
+/// Recursively count entries in a group.
+fn count_entries(group: &Group) -> usize {
+    let mut count = group.entries.len();
+    for child in &group.children {
+        count += count_entries(child);
+    }
+    count
 }
