@@ -2,6 +2,7 @@
 
 use crate::components::entry_browser::{EntryBrowser, EntryBrowserInput, EntryBrowserOutput};
 use crate::components::entry_edit::{EntryEdit, EntryEditInput, EntryEditOutput};
+use crate::components::info_bar::{format_save_time, InfoBar, InfoBarInput};
 use crate::components::search_palette::{SearchPalette, SearchPaletteInput, SearchPaletteOutput};
 use crate::components::sidebar::{Sidebar, SidebarInit, SidebarInput, SidebarOutput};
 use crate::components::unlock::{UnlockDialog, UnlockInput, UnlockOutput};
@@ -107,6 +108,7 @@ pub struct App {
     sidebar: Controller<Sidebar>,
     entry_browser: Controller<EntryBrowser>,
     entry_edit: Controller<EntryEdit>,
+    info_bar: Controller<InfoBar>,
 }
 
 #[relm4::component(pub)]
@@ -171,124 +173,8 @@ impl Component for App {
                         add_overlay = model.search_palette.widget(),
                     },
 
-                    // Bottom info bar
-                    gtk4::Separator {
-                        set_orientation: gtk4::Orientation::Horizontal,
-                    },
-                    
-                    gtk4::CenterBox {
-                        set_margin_all: 4,
-                        set_margin_start: 8,
-                        set_margin_end: 8,
-                        set_hexpand: true, // Ensure it fills width for alignment
-                        
-                        // Left: Filename + Entry Count
-                        #[wrap(Some)]
-                        set_start_widget = &gtk4::Box {
-                            set_orientation: gtk4::Orientation::Horizontal,
-                            set_spacing: 16,
-                            
-                            // Database Name
-                            gtk4::Box {
-                                set_orientation: gtk4::Orientation::Horizontal,
-                                set_spacing: 6,
-                                
-                                gtk4::Image {
-                                    set_icon_name: Some("folder-open-symbolic"),
-                                    add_css_class: "dim-label",
-                                },
-                                gtk4::Label {
-                                    #[watch]
-                                    set_label: model.db_filename.as_deref().unwrap_or(""),
-                                    add_css_class: "dim-label",
-                                },
-                            },
-                            
-                            // Entry Count
-                            gtk4::Box {
-                                set_orientation: gtk4::Orientation::Horizontal,
-                                set_spacing: 6,
-                                
-                                gtk4::Image {
-                                    set_icon_name: Some("view-list-symbolic"),
-                                    add_css_class: "dim-label",
-                                },
-                                gtk4::Label {
-                                    #[watch]
-                                    set_label: &format!("{} entries", model.entry_count),
-                                    add_css_class: "dim-label",
-                                },
-                            },
-                            
-                            // Database Size
-                            gtk4::Box {
-                                set_orientation: gtk4::Orientation::Horizontal,
-                                set_spacing: 6,
-                                
-                                gtk4::Image {
-                                    set_icon_name: Some("drive-harddisk-symbolic"),
-                                    add_css_class: "dim-label",
-                                },
-                                gtk4::Label {
-                                    #[watch]
-                                    set_label: &model.db_size,
-                                    add_css_class: "dim-label",
-                                },
-                            },
-                        },
-
-                        // Right: Unsaved Indicator + Last saved status
-                        #[wrap(Some)]
-                        set_end_widget = &gtk4::Box {
-                            set_orientation: gtk4::Orientation::Horizontal,
-                            set_spacing: 12,
-
-                            // Unsaved changes indicator (only show dot when there are unsaved changes)
-                            gtk4::Label {
-                                #[watch]
-                                set_label: if model.unsaved_changes { "●" } else { "" },
-                                add_css_class: "dim-label",
-                            },
-
-                            // Last Save Status - always visible
-                            gtk4::Box {
-                                set_orientation: gtk4::Orientation::Horizontal,
-                                set_spacing: 6,
-                                
-                                // Last saved text first (left side)
-                                gtk4::Label {
-                                    #[watch]
-                                    set_label: &if model.is_saving {
-                                        "Saving".to_string()
-                                    } else if model.last_save_time.is_empty() {
-                                        "No changes".to_string()
-                                    } else {
-                                        format!("Last save: {}", model.last_save_time)
-                                    },
-                                    add_css_class: "dim-label",
-                                },
-                                
-                                // Status icon on right: spinner (saving), checkmark (saved), dash (not saved yet)
-                                gtk4::Spinner {
-                                    set_size_request: (16, 16),
-                                    set_spinning: true,
-                                    #[watch]
-                                    set_visible: model.is_saving,
-                                },
-                                gtk4::Image {
-                                    #[watch]
-                                    set_icon_name: Some(if model.last_save_time.is_empty() {
-                                        "content-loading-symbolic" // dash/empty icon for "not saved yet"
-                                    } else {
-                                        "object-select-symbolic" // standard GTK checkmark for saved
-                                    }),
-                                    add_css_class: "dim-label",
-                                    #[watch]
-                                    set_visible: !model.is_saving,
-                                },
-                            }
-                        }
-                    }
+                    // Bottom info bar - use the InfoBar component
+                    model.info_bar.widget().clone() -> gtk4::Box {},
                 } -> {
                     set_name: "main",
                 },
@@ -357,6 +243,10 @@ impl Component for App {
                 EntryEditOutput::Cancelled => AppInput::SaveDatabase, // No-op trigger
             });
 
+        let info_bar = InfoBar::builder()
+            .launch(())
+            .detach();
+
         let mut model = App {
             state: AppState::Locked,
             config,
@@ -374,6 +264,7 @@ impl Component for App {
             sidebar,
             entry_browser,
             entry_edit,
+            info_bar,
         };
         
         // Auto-unlock in dev mode
@@ -411,6 +302,11 @@ impl Component for App {
                          model.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
                          model.search_palette.emit(SearchPaletteInput::SetRootGroup(root.clone()));
                          model.entry_browser.emit(EntryBrowserInput::SetRootGroup(root.clone()));
+                         
+                         // Sync initial state to info bar
+                         model.info_bar.emit(InfoBarInput::SetFilename(model.db_filename.clone()));
+                         model.info_bar.emit(InfoBarInput::SetEntryCount(model.entry_count));
+                         model.info_bar.emit(InfoBarInput::SetDbSize(model.db_size.clone()));
                          
                          tracing::info!("Auto-unlock successful");
 
@@ -532,6 +428,11 @@ impl Component for App {
                         self.db_size = std::fs::metadata(&self.config.database_path)
                             .map(|m| format_size(m.len()))
                             .unwrap_or_else(|_| "Unknown".to_string());
+                        
+                        // Sync initial state to info bar
+                        self.info_bar.emit(InfoBarInput::SetFilename(self.db_filename.clone()));
+                        self.info_bar.emit(InfoBarInput::SetEntryCount(self.entry_count));
+                        self.info_bar.emit(InfoBarInput::SetDbSize(self.db_size.clone()));
                             
                         // Populate sidebar and search
                         self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
@@ -659,6 +560,7 @@ impl Component for App {
                 
                 // Mark as unsaved
                 self.unsaved_changes = true;
+                self.info_bar.emit(InfoBarInput::SetUnsavedChanges(true));
                 
                 // Update count? If we added/removed (not yet supported via this message), we'd need to recount.
                 // For safety, let's recount.
@@ -748,6 +650,7 @@ impl Component for App {
                     
                     tracing::info!("[SPINNER] Setting is_saving = true");
                     self.is_saving = true;
+                    self.info_bar.emit(InfoBarInput::SetSaving(true));
                     
                     // Clone Arc for thread (cheap)
                     let db_arc = db.clone();
@@ -788,19 +691,21 @@ impl Component for App {
             AppInput::SaveFinished(result) => {
                 tracing::info!("[SPINNER] SaveFinished received, setting is_saving = false");
                 self.is_saving = false;
+                self.info_bar.emit(InfoBarInput::SetSaving(false));
                 match result {
                     Ok(_) => {
                         self.unsaved_changes = false;
+                        self.info_bar.emit(InfoBarInput::SetUnsavedChanges(false));
+                        
                         // Use locale-aware time formatting with seconds (time only, no date)
-                        // %X = locale's time (includes seconds)
-                        self.last_save_time = chrono::Local::now()
-                            .format_localized("%X", get_system_locale())
-                            .to_string();
+                        self.last_save_time = format_save_time();
+                        self.info_bar.emit(InfoBarInput::SetLastSaveTime(self.last_save_time.clone()));
                         
                         // Update size
                         self.db_size = std::fs::metadata(&self.config.database_path)
                             .map(|m| format_size(m.len()))
                             .unwrap_or_else(|_| "Unknown".to_string());
+                        self.info_bar.emit(InfoBarInput::SetDbSize(self.db_size.clone()));
                             
                         tracing::info!("Database saved successfully");
                     }
@@ -880,35 +785,4 @@ fn count_entries(group: &Group) -> usize {
         count += count_entries(child);
     }
     count
-}
-
-/// Get the system locale for date/time formatting.
-/// Reads from LC_TIME or LANG environment variables and maps to chrono::Locale.
-fn get_system_locale() -> chrono::Locale {
-    use chrono::Locale;
-    
-    // Try LC_TIME first, then LANG
-    let lang = std::env::var("LC_TIME")
-        .or_else(|_| std::env::var("LANG"))
-        .unwrap_or_else(|_| "en_US".to_string());
-    
-    // Extract the language code (e.g., "it_IT.UTF-8" -> "it_IT" -> match to locale)
-    let lang_code = lang.split('.').next().unwrap_or("en_US");
-    
-    // Map common locale codes to chrono::Locale
-    match lang_code {
-        s if s.starts_with("it") => Locale::it_IT,
-        s if s.starts_with("de") => Locale::de_DE,
-        s if s.starts_with("fr") => Locale::fr_FR,
-        s if s.starts_with("es") => Locale::es_ES,
-        s if s.starts_with("pt") => Locale::pt_PT,
-        s if s.starts_with("nl") => Locale::nl_NL,
-        s if s.starts_with("pl") => Locale::pl_PL,
-        s if s.starts_with("ru") => Locale::ru_RU,
-        s if s.starts_with("ja") => Locale::ja_JP,
-        s if s.starts_with("zh") => Locale::zh_CN,
-        s if s.starts_with("ko") => Locale::ko_KR,
-        s if s.starts_with("en_GB") => Locale::en_GB,
-        _ => Locale::en_US, // Default fallback
-    }
 }
