@@ -14,3 +14,7 @@ Thumbs.db
 # Env files
 .env
 .env.*
+.dev_state.toml
+
+# Database
+*.kdbx
