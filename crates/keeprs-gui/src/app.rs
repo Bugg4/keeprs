@@ -612,6 +612,8 @@ impl Component for App {
             AppInput::EntrySaved(entry) => {
                 tracing::info!("Entry saved: {}", entry.title);
                 
+                let mut refreshed_root = None;
+
                 if let Some(ref db) = self.database {
                     let mut db = db.borrow_mut();
                     
@@ -626,6 +628,13 @@ impl Component for App {
                     // if let Err(e) = db.save() { ... }
                     
                     tracing::info!("Entry updated in memory");
+
+                    // Refresh root group to reflect changes
+                    refreshed_root = Some(db.root_group().clone());
+                }
+
+                if let Some(root) = refreshed_root {
+                    self.root_group = Some(root);
                 }
                 
                 // Mark as unsaved
@@ -654,6 +663,9 @@ impl Component for App {
                         group_uuid: group_uuid.clone() 
                     });
                 }
+                
+                // Auto-save
+                sender.input(AppInput::SaveDatabase);
             }
             AppInput::SaveAttachment { filename, data } => {
                 let file_chooser = gtk4::FileChooserNative::new(
