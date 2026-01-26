@@ -43,3 +43,6 @@ zxcvbn = "3"
 # Favicon fetching
 reqwest = { version = "0.12", features = ["blocking"] }
 url = "2"
+
+# Env vars
+dotenvy = "0.15"

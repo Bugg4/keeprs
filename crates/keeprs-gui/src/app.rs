@@ -14,6 +14,33 @@ use relm4::prelude::*;
 use std::sync::Arc;
 use std::cell::RefCell;
 
+#[cfg(debug_assertions)]
+use serde::{Deserialize, Serialize};
+
+#[cfg(debug_assertions)]
+#[derive(Debug, Serialize, Deserialize, Default)]
+struct DevState {
+    group_uuid: Option<String>,
+    entry_uuid: Option<String>,
+}
+
+#[cfg(debug_assertions)]
+impl DevState {
+    fn load() -> Self {
+        if let Ok(content) = std::fs::read_to_string(".dev_state.toml") {
+            toml::from_str(&content).unwrap_or_default()
+        } else {
+            Self::default()
+        }
+    }
+
+    fn save(&self) {
+        if let Ok(content) = toml::to_string(self) {
+            let _ = std::fs::write(".dev_state.toml", content);
+        }
+    }
+}
+
 /// Application state.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppState {
@@ -197,7 +224,7 @@ impl Component for App {
                 EntryEditOutput::Cancelled => AppInput::SaveDatabase, // No-op trigger
             });
 
-        let model = App {
+        let mut model = App {
             state: AppState::Locked,
             config,
             database: None,
@@ -209,6 +236,72 @@ impl Component for App {
             entry_browser,
             entry_edit,
         };
+        
+        // Auto-unlock in dev mode
+        #[cfg(debug_assertions)]
+        {
+            // Load .env.dev if it exists
+            let _ = dotenvy::from_filename(".env.dev");
+            
+            if let Ok(password) = std::env::var("DB_PASSWORD") {
+                tracing::info!("Found DB_PASSWORD in env, attempting auto-unlock");
+                match KeepassDatabase::unlock(&model.config.database_path, &password) {
+                    Ok(db) => {
+                         let root = db.root_group();
+                         model.root_group = Some(root.clone());
+                         model.database = Some(Arc::new(RefCell::new(db)));
+                         model.state = AppState::Unlocked;
+                         
+                         // We need to send these signals *after* widgets are created, 
+                         // but we can't emit to controllers before they are fully initialized/mapped sometimes?
+                         // Actually Relm4 components are initialized here.
+                         // However, the `sender` we have is for AppInput. 
+                         // We can't easily emit to child components' inputs from `init` directly referencing `model.sidebar`
+                         // because `model` is being built.
+                         // But we created `sidebar` controller above.
+                         
+                         model.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
+                         model.search_palette.emit(SearchPaletteInput::SetRootGroup(root.clone()));
+                         model.entry_browser.emit(EntryBrowserInput::SetRootGroup(root.clone()));
+                         
+                         tracing::info!("Auto-unlock successful");
+
+                         // Restore previous state
+                         let state = DevState::load();
+                         if let Some(group_uuid) = state.group_uuid {
+                             tracing::info!("Restoring group: {}", group_uuid);
+                             // Select group
+                             // We don't have update logic here easily without duplicating it.
+                             // But we can manually set the current group and emit.
+                             model.current_group_uuid = Some(group_uuid.clone());
+                             
+                             if let Some(group) = find_group_by_uuid(&root, &group_uuid) {
+                                 model.sidebar.emit(SidebarInput::UpdateSelection(group_uuid.clone()));
+                                 model.entry_browser.emit(EntryBrowserInput::SelectGroup { 
+                                     uuid: group_uuid.clone(), 
+                                     name: group.name.clone(), 
+                                     group: group.clone() 
+                                 });
+
+                                 // Restore entry
+                                 if let Some(entry_uuid) = state.entry_uuid {
+                                     tracing::info!("Restoring entry: {}", entry_uuid);
+                                     if let Some(entry) = group.entries.iter().find(|e| e.uuid == entry_uuid) {
+                                         model.entry_browser.emit(EntryBrowserInput::SelectEntry { 
+                                             uuid: entry_uuid, 
+                                             entry: entry.clone() 
+                                         });
+                                     }
+                                 }
+                             }
+                         }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Auto-unlock failed: {}", e);
+                    }
+                }
+            }
+        }
 
         let widgets = view_output!();
 
@@ -247,8 +340,12 @@ impl Component for App {
         widgets.main_paned.set_position(model.config.sidebar_initial_width);
         tracing::info!("Set main_paned position to: {}", model.config.sidebar_initial_width);
 
-        // Start on unlock screen
-        widgets.main_stack.set_visible_child_name("unlock");
+        // Start on unlock screen vs main depending on state
+        if model.state == AppState::Unlocked {
+            widgets.main_stack.set_visible_child_name("main");
+        } else {
+            widgets.main_stack.set_visible_child_name("unlock");
+        }
 
         // Connect dialogs to main window
         model.entry_edit.widget().set_transient_for(Some(&widgets.main_window));
@@ -303,6 +400,14 @@ impl Component for App {
                             name: group.name.clone(),
                             group: group.clone(),
                         });
+
+                        #[cfg(debug_assertions)]
+                        {
+                            let mut state = DevState::load();
+                            state.group_uuid = Some(uuid.clone());
+                            state.entry_uuid = None; // clear entry selection
+                            state.save();
+                        }
                     }
                 }
             }
@@ -330,8 +435,16 @@ impl Component for App {
                         // Then select the entry
                         self.entry_browser.emit(EntryBrowserInput::SelectEntry {
                             uuid: entry.uuid.clone(),
-                            entry,
+                            entry: entry.clone(),
                         });
+
+                        #[cfg(debug_assertions)]
+                        {
+                            let mut state = DevState::load();
+                            state.group_uuid = Some(group_uuid.clone());
+                            state.entry_uuid = Some(entry.uuid.clone()); // use entry.uuid assuming it is available in scope or passed
+                            state.save();
+                        }
                     }
                 }
             }
