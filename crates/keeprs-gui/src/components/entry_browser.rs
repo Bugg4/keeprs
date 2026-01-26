@@ -575,6 +575,7 @@ impl EntryBrowser {
             let title = gtk4::Label::new(Some(&entry.title));
             title.add_css_class("title-1");
             title.set_halign(gtk4::Align::Start);
+            title.set_selectable(true);
             details_box.append(&title);
 
             // Separator after title
