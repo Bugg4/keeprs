@@ -6,6 +6,7 @@ use keepass::{Database, DatabaseKey};
 use std::path::Path;
 
 /// Wrapper around the KeePass database for easier operations.
+#[derive(Clone)]
 pub struct KeepassDatabase {
     db: Database,
     path: std::path::PathBuf,

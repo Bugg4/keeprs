@@ -47,5 +47,5 @@ url = "2"
 # Env vars
 dotenvy = "0.15"
 
-# Time
-chrono = "0.4"
+# Time with locale support
+chrono = { version = "0.4", features = ["unstable-locales"] }
