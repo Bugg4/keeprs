@@ -69,6 +69,7 @@ pub enum AppInput {
     /// Entry selected from search.
     SearchEntrySelected { entry: Entry, group_uuid: String },
     /// Entry actions.
+    #[allow(dead_code)]
     EditEntry(Entry),
     DeleteEntry(String),
     AddEntry,
@@ -564,7 +565,7 @@ impl Component for App {
                 
                 // Update count? If we added/removed (not yet supported via this message), we'd need to recount.
                 // For safety, let's recount.
-                if let Some(ref root) = self.root_group {
+                if let Some(ref _root) = self.root_group {
                      // Wait, self.root_group might be stale if we don't reload it from DB?
                      // keeprs-core keeps them in sync? 
                      // Usually we need to reload the group tree from the DB or update the in-memory tree.

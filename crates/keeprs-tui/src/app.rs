@@ -106,6 +106,7 @@ pub struct SearchResult {
     /// Path to the entry (for display).
     pub path: String,
     /// Parent group UUID.
+    #[allow(dead_code)]
     pub group_uuid: String,
     /// Match score for sorting.
     pub score: i64,

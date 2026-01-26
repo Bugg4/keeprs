@@ -67,7 +67,7 @@ pub enum SearchPaletteOutput {
     /// User selected a group.
     GroupSelected { uuid: String, name: String, group: Group },
     /// User selected an entry.
-    EntrySelected { uuid: String, entry: Entry, group_uuid: String },
+    EntrySelected { #[allow(dead_code)] uuid: String, entry: Entry, group_uuid: String },
     /// Palette was closed.
     Closed,
 }

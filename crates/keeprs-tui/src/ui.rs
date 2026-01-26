@@ -6,7 +6,7 @@ use std::time::SystemTime;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     prelude::*,
-    style::{Color, Modifier, Style, Stylize},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,

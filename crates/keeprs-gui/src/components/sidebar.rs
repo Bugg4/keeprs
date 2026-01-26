@@ -39,7 +39,6 @@ pub struct Sidebar {
     hidden_groups: HashSet<String>,
 }
 
-#[relm4::component(pub)]
 #[derive(Debug, Clone)]
 pub struct SidebarInit {
     pub initial_width: i32,

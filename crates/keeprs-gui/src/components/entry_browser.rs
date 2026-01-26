@@ -46,6 +46,7 @@ pub enum EntryBrowserInput {
     /// Open URL in default browser.
     OpenUrl(String),
     /// Enter inline edit mode.
+    #[allow(dead_code)]
     EnterEditMode,
     /// Exit edit mode (true = save, false = cancel).
     ExitEditMode(bool),
@@ -60,7 +61,7 @@ pub enum EntryBrowserInput {
     /// Edit notes field.
     EditNotes(String),
     /// Favicon loaded for URL.
-    FaviconLoaded { url: String, data: Vec<u8> },
+    FaviconLoaded { #[allow(dead_code)] url: String, data: Vec<u8> },
 }
 
 /// Output messages from entry browser.
@@ -703,9 +704,18 @@ impl EntryBrowser {
 
                         // Timer to update UI
                         let totp_timer = totp.clone();
+                        let code_label_weak = code_label.downgrade();
+                        let drawing_area_weak = drawing_area.downgrade();
                         glib::timeout_add_local(
                             std::time::Duration::from_millis(100),
-                            glib::clone!(@weak code_label, @weak drawing_area => @default-return glib::ControlFlow::Break, move || {
+                            move || {
+                                let Some(code_label) = code_label_weak.upgrade() else {
+                                    return glib::ControlFlow::Break;
+                                };
+                                let Some(drawing_area) = drawing_area_weak.upgrade() else {
+                                    return glib::ControlFlow::Break;
+                                };
+                                
                                 if let Ok(code) = totp_timer.value_now() {
                                     // Update Text if changed
                                     // We check plain text vs code to avoid resetting markup if not needed, 
@@ -724,7 +734,7 @@ impl EntryBrowser {
                                     drawing_area.queue_draw();
                                 }
                                 glib::ControlFlow::Continue
-                            })
+                            }
                         );
                     }
                 }
