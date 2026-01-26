@@ -92,6 +92,7 @@ pub struct App {
     config: Config,
     database: Option<Arc<RefCell<KeepassDatabase>>>,
     db_filename: Option<String>,
+    db_size: String,
     entry_count: usize,
     unsaved_changes: bool,
     last_save_time: String,
@@ -216,6 +217,22 @@ impl Component for App {
                                     add_css_class: "dim-label",
                                 },
                             },
+                            
+                            // Database Size
+                            gtk4::Box {
+                                set_orientation: gtk4::Orientation::Horizontal,
+                                set_spacing: 6,
+                                
+                                gtk4::Image {
+                                    set_icon_name: Some("drive-harddisk-symbolic"),
+                                    add_css_class: "dim-label",
+                                },
+                                gtk4::Label {
+                                    #[watch]
+                                    set_label: &model.db_size,
+                                    add_css_class: "dim-label",
+                                },
+                            },
                         },
 
                         // Right: Unsaved Indicator + Last saved time
@@ -326,6 +343,7 @@ impl Component for App {
             config,
             database: None,
             db_filename: None,
+            db_size: String::new(),
             entry_count: 0,
             unsaved_changes: false,
             last_save_time: String::new(),
@@ -357,6 +375,10 @@ impl Component for App {
                             .file_name()
                             .and_then(|n| n.to_str())
                             .map(|s| s.to_string());
+                            
+                         model.db_size = std::fs::metadata(&model.config.database_path)
+                            .map(|m| format_size(m.len()))
+                            .unwrap_or_else(|_| "Unknown".to_string());
                          
                          // We need to send these signals *after* widgets are created, 
                          // but we can't emit to controllers before they are fully initialized/mapped sometimes?
@@ -486,7 +508,11 @@ impl Component for App {
                             .file_name()
                             .and_then(|n| n.to_str())
                             .map(|s| s.to_string());
-
+                            
+                        self.db_size = std::fs::metadata(&self.config.database_path)
+                            .map(|m| format_size(m.len()))
+                            .unwrap_or_else(|_| "Unknown".to_string());
+                            
                         // Populate sidebar and search
                         self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
                         self.search_palette.emit(SearchPaletteInput::SetRootGroup(root.clone()));
@@ -687,6 +713,12 @@ impl Component for App {
                     } else {
                         self.unsaved_changes = false;
                         self.last_save_time = chrono::Local::now().format("%H:%M").to_string();
+                        
+                        // Update size
+                        self.db_size = std::fs::metadata(&self.config.database_path)
+                            .map(|m| format_size(m.len()))
+                            .unwrap_or_else(|_| "Unknown".to_string());
+                            
                         tracing::info!("Database saved manually");
                     }
                 }
@@ -733,6 +765,22 @@ fn find_entry_and_group<'a>(group: &'a Group, entry_uuid: &str) -> Option<(&'a G
         }
     }
     None
+}
+
+fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.2} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.2} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.2} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
 }
 
 /// Recursively count entries in a group.
