@@ -577,14 +577,20 @@ impl EntryBrowser {
             title.set_halign(gtk4::Align::Start);
             details_box.append(&title);
 
-            // Fields
-            if !entry.username.is_empty() {
-                self.add_field_row(&details_box, "Username", &entry.username, false, None, sender);
-            }
+            // Separator after title
+            details_box.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
+            
+            // Authentication Group (implicit)
+            if !entry.username.is_empty() || !entry.password.is_empty() || entry.otp.is_some() {
+                // Fields
+                if !entry.username.is_empty() {
+                    self.add_field_row(&details_box, "Username", &entry.username, false, None, sender);
+                }
 
-            if !entry.password.is_empty() {
-                self.add_password_row(&details_box, &entry.password, sender);
-            }
+                if !entry.password.is_empty() {
+                    self.add_password_row(&details_box, &entry.password, sender);
+                }
+
 
             if let Some(otp_uri) = &entry.otp {
                 if let Ok(totp) = otp_uri.parse::<TOTP>() {
@@ -718,11 +724,16 @@ impl EntryBrowser {
                         );
                     }
                 }
+            }
 
+            // Add separator at end of Authentication group
+            details_box.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
             }
 
             if !entry.url.is_empty() {
                 self.add_url_row(&details_box, &entry.url, sender);
+                 // Separator after URL
+                details_box.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
             }
 
             if !entry.notes.is_empty() {
@@ -736,6 +747,9 @@ impl EntryBrowser {
                 notes_text.set_wrap(true);
                 notes_text.set_selectable(true);
                 details_box.append(&notes_text);
+                
+                // Separator after notes
+                details_box.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
             }
 
             if !entry.attachments.is_empty() {
