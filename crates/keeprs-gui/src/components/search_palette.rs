@@ -6,6 +6,7 @@ use fuzzy_matcher::FuzzyMatcher;
 use gtk4::prelude::*;
 use gtk4::gdk;
 use relm4::prelude::*;
+use std::collections::HashSet;
 
 /// A search result item.
 #[derive(Debug, Clone)]
@@ -79,11 +80,12 @@ pub struct SearchPalette {
     results: Vec<SearchResult>,
     selected_index: usize,
     matcher: SkimMatcherV2,
+    hidden_groups: HashSet<String>,
 }
 
 #[relm4::component(pub)]
 impl Component for SearchPalette {
-    type Init = ();
+    type Init = Vec<String>;
     type Input = SearchPaletteInput;
     type Output = SearchPaletteOutput;
     type CommandOutput = ();
@@ -148,7 +150,7 @@ impl Component for SearchPalette {
     }
 
     fn init(
-        _init: Self::Init,
+        hidden_groups: Self::Init,
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
@@ -159,6 +161,7 @@ impl Component for SearchPalette {
             results: Vec::new(),
             selected_index: 0,
             matcher: SkimMatcherV2::default(),
+            hidden_groups: hidden_groups.into_iter().collect(),
         };
 
         let widgets = view_output!();
@@ -343,6 +346,11 @@ impl SearchPalette {
             format!("{} / {}", path, group.name)
         };
 
+        // Check if hidden
+        if self.hidden_groups.contains(&group.name) {
+            return;
+        }
+
         // Add this group
         items.push(SearchResult::Group {
             uuid: group.uuid.clone(),
@@ -353,6 +361,9 @@ impl SearchPalette {
 
         // Add entries
         for entry in &group.entries {
+            if self.hidden_groups.contains(&entry.title) {
+                continue;
+            }
             items.push(SearchResult::Entry {
                 uuid: entry.uuid.clone(),
                 title: entry.title.clone(),

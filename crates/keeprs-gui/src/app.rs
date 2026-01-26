@@ -291,7 +291,7 @@ impl Component for App {
             });
 
         let search_palette = SearchPalette::builder()
-            .launch(())
+            .launch(config.hidden_groups.clone())
             .forward(sender.input_sender(), |output| match output {
                 SearchPaletteOutput::GroupSelected { uuid, name, group } => {
                     AppInput::SearchGroupSelected { uuid, name, group }
@@ -309,6 +309,7 @@ impl Component for App {
             .launch(SidebarInit {
                 initial_width: config.sidebar_initial_width,
                 min_width: config.sidebar_min_width,
+                hidden_groups: config.hidden_groups.clone(),
             })
             .forward(sender.input_sender(), |output| match output {
                 SidebarOutput::GroupSelected(uuid) => AppInput::GroupSelected(uuid),

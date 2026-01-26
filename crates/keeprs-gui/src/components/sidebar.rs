@@ -36,6 +36,7 @@ pub struct Sidebar {
     root_group: Option<Group>,
     selected_uuid: Option<String>,
     expanded_uuids: HashSet<String>,
+    hidden_groups: HashSet<String>,
 }
 
 #[relm4::component(pub)]
@@ -43,6 +44,7 @@ pub struct Sidebar {
 pub struct SidebarInit {
     pub initial_width: i32,
     pub min_width: i32,
+    pub hidden_groups: Vec<String>,
 }
 
 #[relm4::component(pub)]
@@ -88,6 +90,7 @@ impl Component for Sidebar {
             root_group: None,
             selected_uuid: None,
             expanded_uuids: HashSet::new(),
+            hidden_groups: init.hidden_groups.into_iter().collect(),
         };
 
         let widgets = view_output!();
@@ -230,6 +233,10 @@ impl Sidebar {
         levels: &mut Vec<bool>,
         is_last: bool,
     ) {
+        if self.hidden_groups.contains(&entry.title) {
+            return;
+        }
+
         let row = gtk4::ListBoxRow::new();
         row.set_widget_name(&format!("entry-{}", entry.uuid));
         row.add_css_class("sidebar-row");
@@ -304,6 +311,10 @@ impl Sidebar {
         is_last: bool,
         sender: &ComponentSender<Sidebar>,
     ) {
+        if self.hidden_groups.contains(&group.name) {
+            return;
+        }
+
         let row = gtk4::ListBoxRow::new();
         row.set_widget_name(&format!("group-{}", group.uuid));
         row.add_css_class("sidebar-row");

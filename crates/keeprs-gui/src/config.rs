@@ -20,6 +20,9 @@ pub struct Config {
     /// Whether to show the password entropy bar.
     #[serde(default = "default_show_entropy_bar")]
     pub show_entropy_bar: bool,
+    /// List of group/entry names to hide from the UI.
+    #[serde(default)]
+    pub hidden_groups: Vec<String>,
 }
 
 fn default_sidebar_initial_width() -> i32 {
@@ -41,6 +44,7 @@ impl Default for Config {
             sidebar_initial_width: default_sidebar_initial_width(),
             sidebar_min_width: default_sidebar_min_width(),
             show_entropy_bar: default_show_entropy_bar(),
+            hidden_groups: Vec::new(),
         }
     }
 }
