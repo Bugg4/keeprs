@@ -431,6 +431,7 @@ impl EntryBrowser {
 
             let title = gtk4::Label::new(Some(&entry.title));
             title.set_halign(gtk4::Align::Start);
+            title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
             title.add_css_class("heading");
             vbox.append(&title);
 
@@ -576,6 +577,8 @@ impl EntryBrowser {
             title.add_css_class("title-1");
             title.set_halign(gtk4::Align::Start);
             title.set_selectable(true);
+            title.set_wrap(true);
+            title.set_wrap_mode(gtk4::pango::WrapMode::WordChar);
             details_box.append(&title);
 
             // Separator after title
