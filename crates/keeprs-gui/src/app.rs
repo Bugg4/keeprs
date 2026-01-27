@@ -646,6 +646,12 @@ impl Component for App {
             }
             AppInput::SaveDatabase => {
                 if let Some(ref db) = self.database {
+                    // Skip save if nothing has changed
+                    if !self.unsaved_changes {
+                        tracing::info!("SaveDatabase called but no unsaved changes, skipping");
+                        return;
+                    }
+                    
                     if self.is_saving {
                         tracing::debug!("[SPINNER] SaveDatabase called but already saving, returning");
                         return;
