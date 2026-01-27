@@ -38,3 +38,26 @@ show_totp_visible = false
 # These groups and their contents will not be displayed
 # Example: hidden_groups = ["Recycle Bin", "Templates"]
 hidden_groups = []
+
+# =============================================================================
+# Keybindings
+# =============================================================================
+
+[keybindings]
+# Save database shortcut (e.g., "Ctrl+S")
+save_database = "Ctrl+s"
+
+# Toggle search palette shortcut (e.g., "Ctrl+P")
+toggle_search = "Ctrl+p"
+
+# Navigate up in search results
+navigate_up = "Up"
+
+# Navigate down in search results
+navigate_down = "Down"
+
+# Close/cancel action
+close = "Escape"
+
+# Confirm/select action
+confirm = "Return"

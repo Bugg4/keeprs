@@ -10,7 +10,6 @@ use crate::config::Config;
 use keeprs_core::{Entry, Group, KeepassDatabase};
 
 use gtk4::prelude::*;
-use gtk4::gdk;
 use relm4::prelude::*;
 use std::sync::{Arc, RwLock};
 
@@ -370,16 +369,17 @@ impl Component for App {
         key_controller.set_propagation_phase(gtk4::PropagationPhase::Capture);
         
         let sender_clone = sender.clone();
+        let save_binding = model.config.keybindings.save_database.clone();
+        let search_binding = model.config.keybindings.toggle_search.clone();
+        
         key_controller.connect_key_pressed(move |_, key, _keycode, state| {
-            // Check for Ctrl+S
-            if (key == gdk::Key::s || key == gdk::Key::S) 
-                && state.contains(gdk::ModifierType::CONTROL_MASK) {
+            // Check for Save Database shortcut
+            if crate::config::Keybindings::matches(&save_binding, key, state) {
                 sender_clone.input(AppInput::SaveDatabase);
                 return gtk4::glib::Propagation::Stop;
             }
-            // Check for Ctrl+P
-            if (key == gdk::Key::p || key == gdk::Key::P) 
-                && state.contains(gdk::ModifierType::CONTROL_MASK) {
+            // Check for Toggle Search shortcut
+            if crate::config::Keybindings::matches(&search_binding, key, state) {
                 sender_clone.input(AppInput::ToggleSearch);
                 return gtk4::glib::Propagation::Stop;
             }
