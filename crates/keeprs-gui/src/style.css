@@ -90,3 +90,8 @@ label.error {
     /* background: @unfocused_borders; */ 
     padding: 2px;
 }
+
+/* Monospace password styling */
+.monospace-password {
+    font-family: monospace;
+}

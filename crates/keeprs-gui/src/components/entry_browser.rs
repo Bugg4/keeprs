@@ -760,6 +760,7 @@ impl EntryBrowser {
                 notes_text.set_halign(gtk4::Align::Start);
                 notes_text.set_wrap(true);
                 notes_text.set_selectable(true);
+                notes_text.add_css_class("monospace-password");
                 details_box.append(&notes_text);
                 
                 // Separator after notes
@@ -1009,16 +1010,20 @@ impl EntryBrowser {
 
         let value_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
 
-        let display_value = if self.password_visible {
-            password.to_string()
-        } else {
-            "••••••••".to_string()
-        };
-
-        let value_label = gtk4::Label::new(Some(&display_value));
+        // Use Label with CSS class for monospace font
+        let value_label = gtk4::Label::new(None);
         value_label.set_halign(gtk4::Align::Start);
         value_label.set_hexpand(true);
         value_label.set_selectable(true);
+
+        if self.password_visible {
+            value_label.set_text(password);
+            value_label.add_css_class("monospace-password");
+        } else {
+            value_label.set_text("••••••••");
+            value_label.remove_css_class("monospace-password");
+        }
+        
         value_row.append(&value_label);
 
         // Toggle visibility button
