@@ -306,6 +306,7 @@ impl Component for App {
                          
                          // Sync initial state to info bar
                          model.info_bar.emit(InfoBarInput::SetFilename(model.db_filename.clone()));
+                         model.info_bar.emit(InfoBarInput::SetFullPath(model.config.database_path.display().to_string()));
                          model.info_bar.emit(InfoBarInput::SetEntryCount(model.entry_count));
                          model.info_bar.emit(InfoBarInput::SetDbSize(model.db_size.clone()));
                          
@@ -432,6 +433,7 @@ impl Component for App {
                         
                         // Sync initial state to info bar
                         self.info_bar.emit(InfoBarInput::SetFilename(self.db_filename.clone()));
+                        self.info_bar.emit(InfoBarInput::SetFullPath(self.config.database_path.display().to_string()));
                         self.info_bar.emit(InfoBarInput::SetEntryCount(self.entry_count));
                         self.info_bar.emit(InfoBarInput::SetDbSize(self.db_size.clone()));
                             

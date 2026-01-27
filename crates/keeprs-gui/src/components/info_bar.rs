@@ -49,6 +49,8 @@ pub fn format_save_time() -> String {
 pub enum InfoBarInput {
     /// Update database filename.
     SetFilename(Option<String>),
+    /// Update full database path (for tooltip).
+    SetFullPath(String),
     /// Update entry count.
     SetEntryCount(usize),
     /// Update database size string.
@@ -64,6 +66,7 @@ pub enum InfoBarInput {
 /// Info bar model state.
 pub struct InfoBar {
     db_filename: Option<String>,
+    db_full_path: String,
     entry_count: usize,
     db_size: String,
     unsaved_changes: bool,
@@ -114,6 +117,8 @@ impl Component for InfoBar {
                             #[watch]
                             set_label: model.db_filename.as_deref().unwrap_or(""),
                             add_css_class: "dim-label",
+                            #[watch]
+                            set_tooltip_text: if model.db_full_path.is_empty() { None } else { Some(&model.db_full_path) },
                         },
                     },
                     
@@ -212,6 +217,7 @@ impl Component for InfoBar {
     ) -> ComponentParts<Self> {
         let model = InfoBar {
             db_filename: None,
+            db_full_path: String::new(),
             entry_count: 0,
             db_size: String::new(),
             unsaved_changes: false,
@@ -227,6 +233,9 @@ impl Component for InfoBar {
         match message {
             InfoBarInput::SetFilename(filename) => {
                 self.db_filename = filename;
+            }
+            InfoBarInput::SetFullPath(path) => {
+                self.db_full_path = path;
             }
             InfoBarInput::SetEntryCount(count) => {
                 self.entry_count = count;

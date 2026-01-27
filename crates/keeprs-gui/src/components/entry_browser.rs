@@ -1151,6 +1151,7 @@ impl EntryBrowser {
         entry.set_text(value);
         entry.set_show_peek_icon(true);
         entry.set_hexpand(true);
+        entry.add_css_class("monospace");
 
         let sender_clone = sender.clone();
         entry.connect_changed(move |e| {
@@ -1183,6 +1184,7 @@ impl EntryBrowser {
         let text_view = gtk4::TextView::new();
         text_view.set_wrap_mode(gtk4::WrapMode::Word);
         text_view.set_margin_all(8);
+        text_view.add_css_class("monospace");
         text_view.buffer().set_text(value);
 
         let sender_clone = sender.clone();
