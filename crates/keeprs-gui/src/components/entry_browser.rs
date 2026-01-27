@@ -760,7 +760,7 @@ impl EntryBrowser {
                 notes_text.set_halign(gtk4::Align::Start);
                 notes_text.set_wrap(true);
                 notes_text.set_selectable(true);
-                notes_text.add_css_class("monospace-password");
+                notes_text.add_css_class("monospace");
                 details_box.append(&notes_text);
                 
                 // Separator after notes
@@ -1018,10 +1018,10 @@ impl EntryBrowser {
 
         if self.password_visible {
             value_label.set_text(password);
-            value_label.add_css_class("monospace-password");
+            value_label.add_css_class("monospace");
         } else {
             value_label.set_text("••••••••");
-            value_label.remove_css_class("monospace-password");
+            value_label.remove_css_class("monospace");
         }
         
         value_row.append(&value_label);
