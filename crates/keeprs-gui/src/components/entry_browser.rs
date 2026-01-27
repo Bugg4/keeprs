@@ -18,6 +18,10 @@ use url::Url;
 /// Minimum width for each column.
 const COLUMN_MIN_WIDTH: i32 = 250;
 
+/// Mask characters for hidden fields.
+const PASSWORD_MASK: &str = "••••••••";
+const TOTP_MASK: &str = "••••••";
+
 /// Messages for the entry browser.
 #[derive(Debug)]
 pub enum EntryBrowserInput {
@@ -31,6 +35,8 @@ pub enum EntryBrowserInput {
     NavigateToDepth(usize),
     /// Toggle password visibility for the current entry.
     TogglePasswordVisible,
+    /// Toggle TOTP code visibility for the current entry.
+    ToggleTotpVisible,
     /// Copy a field value to clipboard.
     CopyField(String),
     /// Add new entry.
@@ -97,13 +103,17 @@ pub struct EntryBrowser {
     edited_entry: Option<Entry>,
     /// Whether to show the password entropy bar.
     show_entropy_bar: bool,
+    /// Whether to show TOTP codes by default (visible) or hidden.
+    show_totp_visible: bool,
+    /// Current state of TOTP visibility for displayed entry.
+    totp_visible: bool,
     /// Current favicon image widget (for updating when favicon loads).
     favicon_image: Rc<RefCell<Option<gtk4::Image>>>,
 }
 
 #[relm4::component(pub)]
 impl Component for EntryBrowser {
-    type Init = bool; // show_entropy_bar
+    type Init = (bool, bool); // (show_entropy_bar, show_totp_visible)
     type Input = EntryBrowserInput;
     type Output = EntryBrowserOutput;
     type CommandOutput = ();
@@ -147,7 +157,7 @@ impl Component for EntryBrowser {
     }
 
     fn init(
-        show_entropy_bar: Self::Init,
+        (show_entropy_bar, show_totp_visible): Self::Init,
         _root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
@@ -160,6 +170,8 @@ impl Component for EntryBrowser {
             editing: false,
             edited_entry: None,
             show_entropy_bar,
+            show_totp_visible,
+            totp_visible: show_totp_visible,
             favicon_image: Rc::new(RefCell::new(None)),
         };
 
@@ -186,6 +198,7 @@ impl Component for EntryBrowser {
                 self.current_entries = group.entries.clone();
                 self.selected_entry = None;
                 self.password_visible = false;
+                self.totp_visible = self.show_totp_visible;
                 self.editing = false;
                 self.edited_entry = None;
                 self.rebuild_columns(widgets, &sender);
@@ -195,6 +208,7 @@ impl Component for EntryBrowser {
                 self.nav_path.push_entry(uuid, entry.title.clone());
                 self.selected_entry = Some(entry);
                 self.password_visible = false;
+                self.totp_visible = self.show_totp_visible;
                 self.editing = false;
                 self.edited_entry = None;
                 self.rebuild_columns(widgets, &sender);
@@ -215,6 +229,10 @@ impl Component for EntryBrowser {
             }
             EntryBrowserInput::TogglePasswordVisible => {
                 self.password_visible = !self.password_visible;
+                self.rebuild_columns(widgets, &sender);
+            }
+            EntryBrowserInput::ToggleTotpVisible => {
+                self.totp_visible = !self.totp_visible;
                 self.rebuild_columns(widgets, &sender);
             }
             EntryBrowserInput::CopyField(value) => {
@@ -616,11 +634,17 @@ impl EntryBrowser {
                         let code_label = gtk4::Label::new(None);
                         code_label.set_halign(gtk4::Align::Start);
                         code_label.set_hexpand(true);
-                        code_label.set_selectable(true);
-                        code_label.set_markup(&format!("<span font_family=\"monospace\" size=\"large\">{}</span>", code.code));
+                        code_label.set_selectable(self.totp_visible);
+                        
+                        // Show code or mask based on visibility
+                        if self.totp_visible {
+                            code_label.set_markup(&format!("<span font_family=\"monospace\" size=\"large\">{}</span>", code.code));
+                        } else {
+                            code_label.set_markup(&format!("<span font_family=\"monospace\" size=\"large\">{}</span>", TOTP_MASK));
+                        }
                         value_row.append(&code_label);
 
-                        // Drawing Area for Progress
+                        // Drawing Area for Progress (always visible)
                         let drawing_area = gtk4::DrawingArea::new();
                         drawing_area.set_content_width(24);
                         drawing_area.set_content_height(24);
@@ -686,6 +710,18 @@ impl EntryBrowser {
                         });
                         value_row.append(&drawing_area);
 
+                        // Toggle visibility button
+                        let toggle_btn = gtk4::Button::from_icon_name(
+                            if self.totp_visible { "view-conceal-symbolic" } else { "view-reveal-symbolic" }
+                        );
+                        toggle_btn.add_css_class("flat");
+                        toggle_btn.set_tooltip_text(Some(if self.totp_visible { "Hide TOTP" } else { "Show TOTP" }));
+                        let sender_toggle = sender.clone();
+                        toggle_btn.connect_clicked(move |_| {
+                            sender_toggle.input(EntryBrowserInput::ToggleTotpVisible);
+                        });
+                        value_row.append(&toggle_btn);
+
                         // Copy Button
                         let copy_btn = gtk4::Button::from_icon_name("edit-copy-symbolic");
                         copy_btn.add_css_class("flat");
@@ -717,20 +753,19 @@ impl EntryBrowser {
                                 };
                                 
                                 if let Ok(code) = totp_timer.value_now() {
-                                    // Update Text if changed
-                                    // We check plain text vs code to avoid resetting markup if not needed, 
-                                    // but retrieving text from markup label returns plain text.
+                                    // Only update the code text if it's visible (not masked)
+                                    // If the label shows the TOTP mask, it means TOTP is hidden - don't update
                                     let current_text = code_label.text();
-                                    if current_text.as_str() != code.code {
+                                    if current_text != TOTP_MASK && current_text.as_str() != code.code {
                                         code_label.set_markup(&format!("<span font_family=\"monospace\" size=\"large\">{}</span>", code.code));
                                     }
                                     
-                                    // Update tooltip with remaining seconds
+                                    // Update tooltip with remaining seconds (always, even when hidden)
                                     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
                                     let remaining = totp_timer.period - (now % totp_timer.period);
                                     drawing_area.set_tooltip_text(Some(&format!("{}s remaining", remaining)));
                                     
-                                    // Trigger redraw
+                                    // Trigger redraw for spinner animation (always)
                                     drawing_area.queue_draw();
                                 }
                                 glib::ControlFlow::Continue
@@ -1020,7 +1055,7 @@ impl EntryBrowser {
             value_label.set_text(password);
             value_label.add_css_class("monospace");
         } else {
-            value_label.set_text("••••••••");
+            value_label.set_text(PASSWORD_MASK);
             value_label.remove_css_class("monospace");
         }
         

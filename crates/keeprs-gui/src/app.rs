@@ -228,7 +228,7 @@ impl Component for App {
             });
 
         let entry_browser = EntryBrowser::builder()
-            .launch(config.show_entropy_bar)
+            .launch((config.show_entropy_bar, config.show_totp_visible))
             .forward(sender.input_sender(), |output| match output {
                 EntryBrowserOutput::EntryEdited(entry) => AppInput::EntrySaved(entry),
                 EntryBrowserOutput::DeleteEntry(uuid) => AppInput::DeleteEntry(uuid),

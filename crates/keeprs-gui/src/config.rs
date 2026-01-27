@@ -20,6 +20,9 @@ pub struct Config {
     /// Whether to show the password entropy bar.
     #[serde(default = "default_show_entropy_bar")]
     pub show_entropy_bar: bool,
+    /// Whether to show TOTP codes by default (visible) or hidden.
+    #[serde(default = "default_show_totp_visible")]
+    pub show_totp_visible: bool,
     /// List of group/entry names to hide from the UI.
     #[serde(default)]
     pub hidden_groups: Vec<String>,
@@ -37,6 +40,10 @@ fn default_show_entropy_bar() -> bool {
     true
 }
 
+fn default_show_totp_visible() -> bool {
+    false
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -44,6 +51,7 @@ impl Default for Config {
             sidebar_initial_width: default_sidebar_initial_width(),
             sidebar_min_width: default_sidebar_min_width(),
             show_entropy_bar: default_show_entropy_bar(),
+            show_totp_visible: default_show_totp_visible(),
             hidden_groups: Vec::new(),
         }
     }
@@ -52,16 +60,26 @@ impl Default for Config {
 impl Config {
     /// Load configuration from the config file.
     ///
-    /// Creates a default config file if it doesn't exist.
-    pub fn load() -> Result<Self> {
-        let config_path = Self::config_path()?;
+    /// If `custom_path` is provided, load from that path.
+    /// Otherwise, load from the default XDG config location.
+    /// Creates a default config file if it doesn't exist (only for default path).
+    pub fn load(custom_path: Option<PathBuf>) -> Result<Self> {
+        let is_custom = custom_path.is_some();
+        let config_path = match custom_path {
+            Some(path) => path,
+            None => Self::config_path()?,
+        };
 
         if !config_path.exists() {
-            // Create default config
-            let config = Config::default();
-            config.save()?;
-            tracing::info!("Created default config: {:?}", config);
-            return Ok(config);
+            // Only create default config for the default path
+            if !is_custom {
+                let config = Config::default();
+                config.save()?;
+                tracing::info!("Created default config: {:?}", config);
+                return Ok(config);
+            } else {
+                anyhow::bail!("Config file not found: {}", config_path.display());
+            }
         }
 
         let contents = std::fs::read_to_string(&config_path)

@@ -1,0 +1,40 @@
+# Keeprs Configuration File
+# ========================
+# 
+# This is the default configuration file for Keeprs.
+# Copy this file to ~/.config/keeprs/keeprs.toml and customize as needed.
+#
+# All options below show their default values.
+
+# Path to your KeePass database file (required)
+# This should be an absolute path to your .kdbx file
+database_path = "/path/to/your/database.kdbx"
+
+# =============================================================================
+# UI Layout Settings
+# =============================================================================
+
+# Initial width of the sidebar in pixels when the application starts
+sidebar_initial_width = 280
+
+# Minimum width the sidebar can be shrunk to when resizing
+sidebar_min_width = 150
+
+# =============================================================================
+# Display Settings
+# =============================================================================
+
+# Show the password entropy (strength) bar below passwords
+show_entropy_bar = true
+
+# Show TOTP codes visible by default (false = hidden, click to reveal)
+show_totp_visible = false
+
+# =============================================================================
+# Filtering
+# =============================================================================
+
+# List of group names to hide from the sidebar
+# These groups and their contents will not be displayed
+# Example: hidden_groups = ["Recycle Bin", "Templates"]
+hidden_groups = []
