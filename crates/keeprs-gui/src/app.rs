@@ -815,10 +815,19 @@ impl Component for App {
                                              // We'll duplicate the post-save logic here or refactor.
                                              
                                              // Refactored logic:
-                                             refreshed_root = Some(db.root_group().clone());
+                                             let root = db.root_group().clone();
+                                             let root_clone = root.clone();
+                                             self.root_group = Some(root.clone());
                                              
                                              self.unsaved_changes = true;
                                              self.info_bar.emit(InfoBarInput::SetUnsavedChanges(true));
+                                             
+                                             // Critical: Notify components of the new data tree
+                                             self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
+                                             self.search_palette.emit(SearchPaletteInput::SetRootGroup(root.clone()));
+                                             
+                                             // Also update EntryBrowser root if needed, or just let GroupSelected/SearchEntrySelected handle it?
+                                             // SearchEntrySelected usually calculates path and selects.
                                              
                                              sender.input(AppInput::SearchEntrySelected { 
                                                  entry: new_entry, 
@@ -852,7 +861,11 @@ impl Component for App {
                 }
 
                 if let Some(root) = refreshed_root {
-                    self.root_group = Some(root);
+                    self.root_group = Some(root.clone());
+                    
+                    // Critical: Notify components of changes
+                    self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
+                    self.search_palette.emit(SearchPaletteInput::SetRootGroup(root.clone()));
                 }
                 
                 // Mark as unsaved

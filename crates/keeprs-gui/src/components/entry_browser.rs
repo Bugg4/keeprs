@@ -404,11 +404,9 @@ impl EntryBrowser {
             widgets.breadcrumb_bar.append(&btn);
         }
 
-        // Build entry list column (if we have entries)
-        if !self.current_entries.is_empty() {
-            let column = self.build_entry_list_column(sender);
-            widgets.columns_box.append(&column);
-        }
+        // Build entry list column (always visible to allow adding entries)
+        let column = self.build_entry_list_column(sender);
+        widgets.columns_box.append(&column);
 
         // Build entry detail column (if entry is selected)
         if let Some(ref entry) = self.selected_entry {

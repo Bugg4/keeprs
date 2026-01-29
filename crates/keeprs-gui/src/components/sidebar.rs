@@ -170,12 +170,15 @@ impl Component for Sidebar {
         match message {
             SidebarInput::SetRootGroup(group) => {
                 self.root_group = Some(group);
-                self.expanded_uuids.clear();
+                // Do NOT clear expanded_uuids here. We want to preserve state.
+                // If new groups appear, they will be collapsed by default.
+                // If old groups disappear, they remain in the set but won't be rendered (no harm).
+                
+                // Ensure root is expanded if it wasn't?
                  if let Some(root) = &self.root_group {
-                    // Always expand root
                     self.expanded_uuids.insert(root.uuid.clone());
-                    // Expand top level items? Maybe not enforced.
                 }
+                
                 self.rebuild_list(widgets, sender);
             }
             SidebarInput::SelectGroup(uuid) => {
@@ -408,6 +411,68 @@ impl Sidebar {
         list_box.append(&row);
     }
 
+    fn add_placeholder_node(
+        &self,
+        list_box: &gtk4::ListBox,
+        levels: &[bool],
+    ) {
+        let row = gtk4::ListBoxRow::new();
+        row.set_activatable(false);
+        row.set_selectable(false);
+        row.add_css_class("sidebar-row");
+        row.add_css_class("sidebar-placeholder");
+
+        let hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+        
+        let depth = levels.len();
+        let indent_width = (depth + 1) * 24; 
+        
+        let drawing_area = gtk4::DrawingArea::new();
+        drawing_area.set_content_width(indent_width as i32);
+        drawing_area.set_content_height(32);
+        drawing_area.set_vexpand(true);
+        
+        let levels_clone = levels.to_vec();
+        
+        drawing_area.set_draw_func(move |_area, cr: &Context, _width, height| {
+             cr.set_source_rgba(0.6, 0.6, 0.6, 0.5);
+             cr.set_line_width(1.0);
+             let indent = 24.0;
+             let half_indent = 12.0;
+
+             for (i, &parent_is_last) in levels_clone.iter().enumerate() {
+                 if !parent_is_last {
+                     let x = i as f64 * indent + half_indent;
+                     cr.move_to(x, -2.0);
+                     cr.line_to(x, height as f64 + 2.0);
+                     cr.stroke().expect("Invalid cairo");
+                 }
+             }
+
+             // Last branch
+             let current_x = depth as f64 * indent + half_indent;
+             cr.move_to(current_x, -2.0);
+             cr.line_to(current_x, height as f64 / 2.0);
+             cr.stroke().expect("Invalid cairo");
+
+             cr.move_to(current_x, height as f64 / 2.0);
+             cr.line_to(current_x + half_indent + 4.0, height as f64 / 2.0);
+             cr.stroke().expect("Invalid cairo");
+        });
+
+        hbox.append(&drawing_area);
+
+        let label = gtk4::Label::new(Some("- Empty -"));
+        label.add_css_class("dim-label");
+        label.set_hexpand(true);
+        label.set_halign(gtk4::Align::Start);
+        label.set_margin_start(12);
+        hbox.append(&label);
+
+        row.set_child(Some(&hbox));
+        list_box.append(&row);
+    }
+
     fn add_group_node(
         &self,
         list_box: &gtk4::ListBox,
@@ -501,8 +566,11 @@ impl Sidebar {
 
         overlay.set_child(Some(&hbox));
 
-        // Expander: Show if has children OR entries
-        if !group.children.is_empty() || !group.entries.is_empty() {
+        // Expander: Show always for groups (unless hidden logic applies, but here we show for all)
+        // User requested expander even for empty groups
+        // But maybe not for Recycle Bin leaf if it shouldn't expand? 
+        // User said: "Do show expader arrow for recycle bin leafs too"
+        {
              let expander_btn = gtk4::Button::new();
              expander_btn.add_css_class("flat");
              expander_btn.add_css_class("circular");
@@ -552,19 +620,25 @@ impl Sidebar {
         if self.expanded_uuids.contains(&group.uuid) {
             levels.push(is_last);
             let total_child_count = group.children.len() + group.entries.len();
-            let mut current_child_idx = 0;
             
-            let next_under_bin = is_under_recycle_bin || group.is_recycle_bin;
+            if total_child_count == 0 {
+                // Show placeholder
+                self.add_placeholder_node(list_box, levels);
+            } else {
+                let mut current_child_idx = 0;
+                
+                let next_under_bin = is_under_recycle_bin || group.is_recycle_bin;
 
-            for child in &group.children {
-                let child_is_last = current_child_idx == total_child_count - 1;
-                self.add_group_node(list_box, child, levels, child_is_last, sender, next_under_bin, context_menu);
-                current_child_idx += 1;
-            }
-            for entry in &group.entries {
-                let child_is_last = current_child_idx == total_child_count - 1;
-                self.add_entry_node(list_box, entry, levels, child_is_last, sender, next_under_bin, context_menu);
-                current_child_idx += 1;
+                for child in &group.children {
+                    let child_is_last = current_child_idx == total_child_count - 1;
+                    self.add_group_node(list_box, child, levels, child_is_last, sender, next_under_bin, context_menu);
+                    current_child_idx += 1;
+                }
+                for entry in &group.entries {
+                    let child_is_last = current_child_idx == total_child_count - 1;
+                    self.add_entry_node(list_box, entry, levels, child_is_last, sender, next_under_bin, context_menu);
+                    current_child_idx += 1;
+                }
             }
             levels.pop();
         }
