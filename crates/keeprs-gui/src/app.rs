@@ -2,6 +2,7 @@
 
 use crate::components::entry_browser::{EntryBrowser, EntryBrowserInput, EntryBrowserOutput};
 use crate::components::entry_edit::{EntryEdit, EntryEditInput, EntryEditOutput};
+use crate::components::group_edit::{GroupEdit, GroupEditInput, GroupEditOutput};
 use crate::components::info_bar::{format_save_time, InfoBar, InfoBarInput};
 use crate::components::search_palette::{SearchPalette, SearchPaletteInput, SearchPaletteOutput};
 use crate::components::sidebar::{Sidebar, SidebarInit, SidebarInput, SidebarOutput};
@@ -57,7 +58,6 @@ pub enum AppInput {
     /// Unlock failed with error.
     // UnlockFailed(String), // Unused
     /// Database unlocked successfully.
-    /// Database unlocked successfully.
     // DatabaseUnlocked, // Unused
     /// Group selected in sidebar.
     GroupSelected(String),
@@ -71,13 +71,18 @@ pub enum AppInput {
     #[allow(dead_code)]
     EditEntry(Entry),
     DeleteEntry(String),
+    DeleteGroup(String),
+    EmptyRecycleBin(String),
     AddEntry,
+    AddGroup,
     /// Save attachment.
     SaveAttachment { filename: String, data: Vec<u8> },
     /// Open attachment.
     OpenAttachment { filename: String, data: Vec<u8> },
     /// Entry saved from edit dialog.
     EntrySaved(Entry),
+    /// Group saved from edit dialog.
+    GroupSaved(Group),
     /// Request to save the database.
     SaveDatabase,
     /// Save operation finished.
@@ -108,6 +113,7 @@ pub struct App {
     sidebar: Controller<Sidebar>,
     entry_browser: Controller<EntryBrowser>,
     entry_edit: Controller<EntryEdit>,
+    group_edit: Controller<GroupEdit>,
     info_bar: Controller<InfoBar>,
 }
 
@@ -218,12 +224,12 @@ impl Component for App {
             .forward(sender.input_sender(), |output| match output {
                 SidebarOutput::GroupSelected(uuid) => AppInput::GroupSelected(uuid),
                 SidebarOutput::EntrySelected(uuid) => {
-                    // We need to find the parent group UUID for this entry
-                    // Since we can't easily query the model here without access to it, 
-                    // we'll pass a special message or handle it in update() if we passed more info.
-                    // Actually, let's just use a new AppInput that does the lookup.
                     AppInput::SidebarEntrySelected(uuid)
                 }
+                SidebarOutput::RequestAddGroup => AppInput::AddGroup,
+                SidebarOutput::RequestDeleteGroup(uuid) => AppInput::DeleteGroup(uuid),
+                SidebarOutput::RequestDeleteEntry(uuid) => AppInput::DeleteEntry(uuid),
+                SidebarOutput::RequestEmptyRecycleBin(uuid) => AppInput::EmptyRecycleBin(uuid),
             });
 
         let entry_browser = EntryBrowser::builder()
@@ -241,6 +247,13 @@ impl Component for App {
             .forward(sender.input_sender(), |output| match output {
                 EntryEditOutput::Saved(entry) => AppInput::EntrySaved(entry),
                 EntryEditOutput::Cancelled => AppInput::SaveDatabase, // No-op trigger
+            });
+
+        let group_edit = GroupEdit::builder()
+            .launch(())
+            .forward(sender.input_sender(), |output| match output {
+                GroupEditOutput::Saved(group) => AppInput::GroupSaved(group),
+                GroupEditOutput::Cancelled => AppInput::NoOp,
             });
 
         let info_bar = InfoBar::builder()
@@ -264,6 +277,7 @@ impl Component for App {
             sidebar,
             entry_browser,
             entry_edit,
+            group_edit,
             info_bar,
         };
         
@@ -401,6 +415,7 @@ impl Component for App {
 
         // Connect dialogs to main window
         model.entry_edit.widget().set_transient_for(Some(&widgets.main_window));
+        model.group_edit.widget().set_transient_for(Some(&widgets.main_window));
 
         ComponentParts { model, widgets }
     }
@@ -520,17 +535,141 @@ impl Component for App {
                 self.entry_edit.emit(EntryEditInput::Edit(entry));
             }
             AppInput::DeleteEntry(uuid) => {
-                // TODO: Implement delete through the database
                 tracing::info!("Delete entry: {}", uuid);
-                if let Some(ref _db) = self.database {
-                    // For now, just refresh the view
-                    if let Some(ref group_uuid) = self.current_group_uuid {
-                        sender.input(AppInput::GroupSelected(group_uuid.clone()));
+                if let Some(ref db) = self.database {
+                    if let Ok(mut db) = db.write() {
+                        if let Err(e) = db.delete_entry(&uuid) {
+                             tracing::error!("Failed to delete entry: {}", e);
+                             // TODO: Show error dialog
+                        } else {
+                             // Refresh
+                             let root = db.root_group().clone();
+                             self.root_group = Some(root.clone());
+                             self.unsaved_changes = true;
+                             self.info_bar.emit(InfoBarInput::SetUnsavedChanges(true));
+                             
+                             self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
+                             self.search_palette.emit(SearchPaletteInput::SetRootGroup(root.clone()));
+                             
+                             // If the deleted entry was selected, deselect it?
+                             // Or just select parent group?
+                             if let Some(ref group_uuid) = self.current_group_uuid {
+                                 sender.input(AppInput::GroupSelected(group_uuid.clone()));
+                             }
+                             sender.input(AppInput::SaveDatabase);
+                        }
+                    }
+                }
+            }
+            AppInput::DeleteGroup(uuid) => {
+                tracing::info!("Delete group: {}", uuid);
+                if let Some(ref db) = self.database {
+                    if let Ok(mut db) = db.write() {
+                        if let Err(e) = db.delete_group(&uuid) {
+                             tracing::error!("Failed to delete group: {}", e);
+                             // TODO: Show error dialog
+                        } else {
+                             // Refresh
+                             let root = db.root_group().clone();
+                             self.root_group = Some(root.clone());
+                             self.unsaved_changes = true;
+                             self.info_bar.emit(InfoBarInput::SetUnsavedChanges(true));
+                             
+                             self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
+                             self.search_palette.emit(SearchPaletteInput::SetRootGroup(root.clone()));
+
+                             // If the deleted group was selected, navigate to root or parent?
+                             // Since we don't track parent easily here without finding it first,
+                             // let's just go to root for now if the deleted group was the active one.
+                             let mut switching_away = false;
+                             if let Some(ref current) = self.current_group_uuid {
+                                 if current == &uuid {
+                                     switching_away = true;
+                                 }
+                             }
+                             
+                             if switching_away {
+                                 // Select root
+                                 self.current_group_uuid = Some(root.uuid.clone());
+                                 sender.input(AppInput::GroupSelected(root.uuid.clone()));
+                             } else {
+                                 // Re-select current to refresh view?
+                                 if let Some(ref current) = self.current_group_uuid {
+                                     sender.input(AppInput::GroupSelected(current.clone()));
+                                 }
+                             }
+                             sender.input(AppInput::SaveDatabase);
+                        }
+                    }
+                }
+            }
+            AppInput::EmptyRecycleBin(_uuid) => {
+                if let Some(ref db) = self.database {
+                    if let Ok(mut db) = db.write() {
+                        if let Err(e) = db.empty_recycle_bin() {
+                            tracing::error!("Failed to empty recycle bin: {}", e);
+                            // TODO: Show error dialog
+                        } else {
+                             tracing::info!("Recycle Bin emptied");
+                             // Refresh
+                             let root = db.root_group().clone();
+                             self.root_group = Some(root.clone());
+                             
+                             self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
+                             self.search_palette.emit(SearchPaletteInput::SetRootGroup(root.clone()));
+
+                             if let Some(ref group_uuid) = self.current_group_uuid {
+                                  sender.input(AppInput::GroupSelected(group_uuid.clone()));
+                             }
+                             
+                             sender.input(AppInput::SaveDatabase);
+                        }
                     }
                 }
             }
             AppInput::AddEntry => {
-                self.entry_edit.emit(EntryEditInput::AddNew);
+                if self.current_group_uuid.is_some() {
+                    self.entry_edit.emit(EntryEditInput::AddNew);
+                }
+            }
+            AppInput::AddGroup => {
+                if self.current_group_uuid.is_some() {
+                    self.group_edit.emit(GroupEditInput::AddNew);
+                }
+            }
+            AppInput::GroupSaved(group) => {
+                 if let Some(ref db) = self.database {
+                    if let Ok(mut db) = db.write() {
+                        if let Some(ref group_uuid) = self.current_group_uuid {
+                             match db.add_group(group_uuid, &group) {
+                                 Ok(new_uuid) => {
+                                     tracing::info!("Added new group with UUID: {}", new_uuid);
+                                     
+                                     // Refresh
+                                     let root = db.root_group().clone();
+                                     self.root_group = Some(root.clone());
+                                     self.unsaved_changes = true;
+                                     self.info_bar.emit(InfoBarInput::SetUnsavedChanges(true));
+                                     
+                                     self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
+                                     self.search_palette.emit(SearchPaletteInput::SetRootGroup(root.clone()));
+                                     // Re-select current group (parent) or the new group?
+                                     // Usually we select the NEW group.
+                                     
+                                     // Let's select the new group
+                                     if let Some(new_group) = find_group_by_uuid(&root, &new_uuid) {
+                                          sender.input(AppInput::GroupSelected(new_uuid));
+                                     }
+                                     
+                                     sender.input(AppInput::SaveDatabase);
+                                 }
+                                 Err(e) => {
+                                     tracing::error!("Failed to add group: {}", e);
+                                 }
+                             }
+                        }
+                    }
+                 }
             }
             AppInput::EntrySaved(entry) => {
                 tracing::info!("Entry saved: {}", entry.title);
@@ -542,7 +681,53 @@ impl Component for App {
                     if let Ok(mut db) = db.write() {
                         // Update entry in database
                         if let Err(e) = db.update_entry(&entry) {
-                            tracing::error!("Failed to update entry: {}", e);
+                            // If update failed, maybe it's a new entry? 
+                            // Try adding it if we have a current group.
+                             if e.to_string().contains("not found") {
+                                 if let Some(ref group_uuid) = self.current_group_uuid {
+                                     tracing::info!("Entry not found, attempting to add new entry to group {}", group_uuid);
+                                     match db.add_entry(group_uuid, &entry) {
+                                         Ok(new_uuid) => {
+                                             tracing::info!("Added new entry with UUID: {}", new_uuid);
+                                             // Update the entry object with the real UUID from DB
+                                             // This is needed so selection works
+                                             // But `entry` is immutable here.
+                                             // We need to re-assign `entry` or create a new scope.
+                                             // Actually we can just shadow it.
+                                             // But we can't shadow `entry` easily inside match arm.
+                                             // We will use a new variable for the final entry to select.
+                                             // Note: `add_entry` generates a NEW UUID. `entry.uuid` is ignored.
+                                             // We must propagate this new UUID to the view.
+                                             let mut new_entry = entry.clone();
+                                             new_entry.uuid = new_uuid;
+                                             
+                                             // Now we need to use `new_entry` for the rest of the logic
+                                             // We can't easily change `entry` binding.
+                                             // We'll duplicate the post-save logic here or refactor.
+                                             
+                                             // Refactored logic:
+                                             refreshed_root = Some(db.root_group().clone());
+                                             
+                                             self.unsaved_changes = true;
+                                             self.info_bar.emit(InfoBarInput::SetUnsavedChanges(true));
+                                             
+                                             sender.input(AppInput::SearchEntrySelected { 
+                                                 entry: new_entry, 
+                                                 group_uuid: group_uuid.clone() 
+                                             });
+                                             sender.input(AppInput::SaveDatabase);
+                                             return;
+                                         }
+                                         Err(err) => {
+                                             tracing::error!("Failed to add entry: {}", err);
+                                         }
+                                     }
+                                 } else {
+                                     tracing::error!("Cannot add new entry: no group selected");
+                                 }
+                             } else {
+                                 tracing::error!("Failed to update entry: {}", e);
+                             }
                             // TODO: Show error dialog
                             return;
                         }
@@ -582,6 +767,7 @@ impl Component for App {
                 }
 
                 // Refresh the view and re-select the entry
+                // (Only for updates)
                 if let Some(ref group_uuid) = self.current_group_uuid {
                     sender.input(AppInput::SearchEntrySelected { 
                         entry: entry.clone(), 

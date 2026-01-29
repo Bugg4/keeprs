@@ -9,6 +9,7 @@ pub struct Group {
     pub name: String,
     pub children: Vec<Group>,
     pub entries: Vec<Entry>,
+    pub is_recycle_bin: bool,
 }
 
 /// Represents a password entry.

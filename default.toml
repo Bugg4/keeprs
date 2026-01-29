@@ -36,8 +36,8 @@ show_totp_visible = false
 
 # List of group names to hide from the sidebar
 # These groups and their contents will not be displayed
-# Example: hidden_groups = ["Recycle Bin", "Templates"]
-hidden_groups = []
+# Example: hidden_groups = ["Recycle Bin"]
+hidden_groups = ["Modelli"]
 
 # =============================================================================
 # Keybindings

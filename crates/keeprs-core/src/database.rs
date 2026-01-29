@@ -62,6 +62,7 @@ impl KeepassDatabase {
                     }
                 })
                 .collect(),
+            is_recycle_bin: self.is_recycle_bin(&kg.uuid.to_string()),
         }
     }
 
@@ -218,5 +219,188 @@ impl KeepassDatabase {
             }
         }
         false
+    }
+
+    /// Add a new entry to the database under a specific group.
+    pub fn add_entry(&mut self, parent_group_uuid: &str, entry: &Entry) -> Result<String> {
+        let mut new_entry = keepass::db::Entry::new();
+        
+        // Map fields
+        new_entry.fields.insert("Title".to_string(), keepass::db::Value::Unprotected(entry.title.clone()));
+        new_entry.fields.insert("UserName".to_string(), keepass::db::Value::Unprotected(entry.username.clone()));
+        new_entry.fields.insert("Password".to_string(), keepass::db::Value::Protected(entry.password.as_bytes().into()));
+        new_entry.fields.insert("URL".to_string(), keepass::db::Value::Unprotected(entry.url.clone()));
+        new_entry.fields.insert("Notes".to_string(), keepass::db::Value::Unprotected(entry.notes.clone()));
+        
+        for (k, v) in &entry.custom_fields {
+             new_entry.fields.insert(k.clone(), keepass::db::Value::Unprotected(v.clone()));
+        }
+
+        let uuid = new_entry.uuid.to_string();
+
+        if Self::add_node_recursive(&mut self.db.root, parent_group_uuid, keepass::db::Node::Entry(new_entry)) {
+            Ok(uuid)
+        } else {
+            anyhow::bail!("Parent group with UUID {} not found", parent_group_uuid)
+        }
+    }
+
+    /// Add a new group to the database under a specific group.
+    pub fn add_group(&mut self, parent_group_uuid: &str, group: &Group) -> Result<String> {
+        let new_group = keepass::db::Group::new(&group.name);
+        let uuid = new_group.uuid.to_string();
+        
+        if Self::add_node_recursive(&mut self.db.root, parent_group_uuid, keepass::db::Node::Group(new_group)) {
+             Ok(uuid)
+        } else {
+             anyhow::bail!("Parent group with UUID {} not found", parent_group_uuid)
+        }
+    }
+
+    pub fn get_recycle_bin_uuid(&self) -> Option<String> {
+        self.db.meta.recyclebin_uuid.as_ref().map(|u| u.to_string())
+    }
+
+    pub fn is_recycle_bin(&self, uuid: &str) -> bool {
+        if let Some(ref bin_uuid) = self.db.meta.recyclebin_uuid {
+            bin_uuid.to_string() == uuid
+        } else {
+            false
+        }
+    }
+
+    fn get_or_create_recycle_bin(&mut self) -> Result<String> {
+        if let Some(ref uuid) = self.db.meta.recyclebin_uuid {
+            // verify it exists... assuming yes for now for simplicity
+            return Ok(uuid.to_string());
+        }
+
+        // Create new group
+        let mut group = keepass::db::Group::new("Recycle Bin");
+        // Set icon to trash (43 is trash in standard KeePass)
+        group.icon_id = Some(43); 
+        let uuid = group.uuid;
+        
+        self.db.root.children.push(keepass::db::Node::Group(group));
+        self.db.meta.recyclebin_uuid = Some(uuid);
+        self.db.meta.recyclebin_enabled = Some(true);
+        
+        Ok(uuid.to_string())
+    }
+
+    fn recycle_node(&mut self, uuid: &str, is_group: bool) -> Result<()> {
+        let recycle_bin_uuid = self.get_or_create_recycle_bin()?;
+        
+        // Prevent recycling the recycle bin itself
+        if recycle_bin_uuid == uuid {
+            anyhow::bail!("Cannot delete the Recycle Bin itself");
+        }
+
+        // Remove the node
+        if let Some(node) = Self::delete_node_recursive(&mut self.db.root, uuid, is_group) {
+             // Add to recycle bin
+             if Self::add_node_recursive(&mut self.db.root, &recycle_bin_uuid, node) {
+                 Ok(())
+             } else {
+                 // Should not happen if get_or_create works
+                 anyhow::bail!("Failed to move node to Recycle Bin")
+             }
+        } else {
+             anyhow::bail!("Node with UUID {} not found", uuid)
+        }
+    }
+
+    pub fn empty_recycle_bin(&mut self) -> Result<()> {
+        if let Some(ref uuid) = self.db.meta.recyclebin_uuid {
+             // Find the group and clear children
+             let uuid_str = uuid.to_string();
+             if let Some(node) = Self::find_node_recursive_mut(&mut self.db.root, &uuid_str) {
+                 if let keepass::db::Node::Group(g) = node {
+                     g.children.clear();
+                 }
+             }
+        }
+        Ok(())
+    }
+    
+    // Improved helper to find ANY node by UUID to allow manipulation
+    fn find_node_recursive_mut<'a>(group: &'a mut keepass::db::Group, target_uuid: &str) -> Option<&'a mut keepass::db::Node> {
+         for node in &mut group.children {
+             let is_match = if let keepass::db::Node::Group(g) = &*node {
+                 g.uuid.to_string() == target_uuid
+             } else { false };
+             
+             if is_match {
+                 return Some(node);
+             }
+
+             if let keepass::db::Node::Group(g) = node {
+                 if let Some(found) = Self::find_node_recursive_mut(g, target_uuid) {
+                     return Some(found);
+                 }
+             }
+         }
+         None
+    }
+
+    fn add_node_recursive(group: &mut keepass::db::Group, target_uuid: &str, new_node: keepass::db::Node) -> bool {
+        if group.uuid.to_string() == target_uuid {
+            group.children.push(new_node);
+            return true;
+        }
+        
+        for node in &mut group.children {
+            if let keepass::db::Node::Group(g) = node {
+                if Self::add_node_recursive(g, target_uuid, new_node.clone()) {
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
+
+
+
+    pub fn delete_entry(&mut self, uuid: &str) -> Result<()> {
+        self.recycle_node(uuid, false)
+    }
+
+    pub fn delete_group(&mut self, uuid: &str) -> Result<()> {
+        self.recycle_node(uuid, true)
+    }
+    
+    fn delete_node_recursive(group: &mut keepass::db::Group, target_uuid: &str, is_group: bool) -> Option<keepass::db::Node> {
+         if is_group {
+             if let Some(pos) = group.children.iter().position(|node| {
+                 if let keepass::db::Node::Group(g) = node {
+                     g.uuid.to_string() == target_uuid
+                 } else {
+                     false
+                 }
+             }) {
+                 return Some(group.children.remove(pos));
+             }
+         } else {
+             if let Some(pos) = group.children.iter().position(|node| {
+                 if let keepass::db::Node::Entry(e) = node {
+                     e.uuid.to_string() == target_uuid
+                 } else {
+                     false
+                 }
+             }) {
+                 return Some(group.children.remove(pos));
+             }
+         }
+
+         for node in &mut group.children {
+             if let keepass::db::Node::Group(g) = node {
+                 if let Some(removed_node) = Self::delete_node_recursive(g, target_uuid, is_group) {
+                     return Some(removed_node);
+                 }
+             }
+         }
+         
+         None
     }
 }

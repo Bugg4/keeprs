@@ -20,6 +20,14 @@ pub enum SidebarInput {
     UpdateSelection(String),
     /// Toggle expansion of a group.
     ToggleExpand(String),
+    /// Request to add a new group.
+    AddGroup,
+    /// Request to delete a group.
+    DeleteGroup(String),
+    /// Request to delete an entry.
+    DeleteEntry(String),
+    /// Request to empty the recycle bin.
+    EmptyRecycleBin(String),
 }
 
 /// Output messages from the sidebar.
@@ -29,6 +37,14 @@ pub enum SidebarOutput {
     GroupSelected(String),
     /// User selected an entry.
     EntrySelected(String),
+    /// User requested to add a group.
+    RequestAddGroup,
+    /// User requested to delete a group.
+    RequestDeleteGroup(String),
+    /// User requested to delete an entry.
+    RequestDeleteEntry(String),
+    /// User requested to empty the recycle bin.
+    RequestEmptyRecycleBin(String),
 }
 
 /// Sidebar model.
@@ -54,13 +70,42 @@ impl Component for Sidebar {
     type CommandOutput = ();
 
     view! {
-        gtk::ScrolledWindow {
-            set_hscrollbar_policy: gtk4::PolicyType::Automatic,
-            set_vscrollbar_policy: gtk4::PolicyType::Automatic,
-            set_vexpand: true,
-            set_propagate_natural_width: true,
-            set_min_content_width: init.min_width,
-            set_max_content_width: init.initial_width,
+        gtk4::Box {
+            set_orientation: gtk4::Orientation::Vertical,
+            set_spacing: 0,
+            
+            // Header
+            gtk4::Box {
+                set_orientation: gtk4::Orientation::Horizontal,
+                set_spacing: 8,
+                set_margin_all: 8,
+                
+                gtk4::Label {
+                    set_text: "Folders",
+                    add_css_class: "heading",
+                    set_halign: gtk4::Align::Start,
+                    set_hexpand: true,
+                },
+                
+                gtk4::Button {
+                    set_icon_name: "list-add-symbolic", // or folder-new-symbolic
+                    add_css_class: "flat",
+                    set_tooltip_text: Some("New Folder"),
+                    connect_clicked => SidebarInput::AddGroup,
+                },
+            },
+            
+            gtk4::Separator {
+                set_orientation: gtk4::Orientation::Horizontal,
+            },
+
+            gtk::ScrolledWindow {
+                set_hscrollbar_policy: gtk4::PolicyType::Automatic,
+                set_vscrollbar_policy: gtk4::PolicyType::Automatic,
+                set_vexpand: true,
+                set_propagate_natural_width: true,
+                set_min_content_width: init.min_width,
+                set_max_content_width: init.initial_width,
 
             #[name = "list_box"]
             gtk4::ListBox {
@@ -75,6 +120,7 @@ impl Component for Sidebar {
                         sender.input(SidebarInput::SelectEntry(uuid.to_string()));
                     }
                 },
+            }
             }
         }
     }
@@ -147,6 +193,18 @@ impl Component for Sidebar {
                 }
                 self.rebuild_list(widgets, sender);
             }
+            SidebarInput::AddGroup => {
+                let _ = sender.output(SidebarOutput::RequestAddGroup);
+            }
+            SidebarInput::DeleteGroup(uuid) => {
+                let _ = sender.output(SidebarOutput::RequestDeleteGroup(uuid));
+            }
+            SidebarInput::DeleteEntry(uuid) => {
+                let _ = sender.output(SidebarOutput::RequestDeleteEntry(uuid));
+            }
+            SidebarInput::EmptyRecycleBin(uuid) => {
+                let _ = sender.output(SidebarOutput::RequestEmptyRecycleBin(uuid));
+            }
         }
     }
 }
@@ -174,7 +232,7 @@ impl Sidebar {
             }
             for entry in &root.entries {
                 let is_last = current_idx == total_count - 1;
-                self.add_entry_node(&widgets.list_box, entry, &mut levels, is_last);
+                self.add_entry_node(&widgets.list_box, entry, &mut levels, is_last, &sender);
                 current_idx += 1;
             }
         }
@@ -231,6 +289,7 @@ impl Sidebar {
         entry: &Entry,
         levels: &mut Vec<bool>,
         is_last: bool,
+        sender: &ComponentSender<Sidebar>,
     ) {
         if self.hidden_groups.contains(&entry.title) {
             return;
@@ -299,6 +358,19 @@ impl Sidebar {
         hbox.append(&label);
 
         row.set_child(Some(&hbox));
+
+        // Right-click context menu
+        let gesture = gtk4::GestureClick::new();
+        gesture.set_button(3); // Right mouse button
+        let sender_clone = sender.clone();
+        let uuid_clone = entry.uuid.clone();
+        gesture.connect_released(move |gesture, _n_press, x, y| {
+            if let Some(widget) = gesture.widget() {
+                Self::show_context_menu(&widget, x, y, &uuid_clone, false, &sender_clone, false);
+            }
+        });
+        row.add_controller(gesture);
+
         list_box.append(&row);
     }
 
@@ -365,6 +437,8 @@ impl Sidebar {
 
         let icon_name = if self.expanded_uuids.contains(&group.uuid) && (!group.children.is_empty() || !group.entries.is_empty()) {
             "folder-open-symbolic"
+        } else if group.is_recycle_bin {
+            "user-trash-symbolic"
         } else {
             "folder-symbolic"
         };
@@ -419,6 +493,20 @@ impl Sidebar {
         }
 
         row.set_child(Some(&overlay));
+
+        // Right-click context menu for groups
+        let gesture = gtk4::GestureClick::new();
+        gesture.set_button(3); // Right mouse button
+        let sender_clone = sender.clone();
+        let uuid_clone = group.uuid.clone();
+        let is_recycle_bin = group.is_recycle_bin;
+        gesture.connect_released(move |gesture, _n_press, x, y| {
+            if let Some(widget) = gesture.widget() {
+                Self::show_context_menu(&widget, x, y, &uuid_clone, true, &sender_clone, is_recycle_bin);
+            }
+        });
+        row.add_controller(gesture);
+
         list_box.append(&row);
 
         if self.expanded_uuids.contains(&group.uuid) {
@@ -433,10 +521,63 @@ impl Sidebar {
             }
             for entry in &group.entries {
                 let child_is_last = current_child_idx == total_child_count - 1;
-                self.add_entry_node(list_box, entry, levels, child_is_last);
+                self.add_entry_node(list_box, entry, levels, child_is_last, sender);
                 current_child_idx += 1;
             }
             levels.pop();
         }
+    }
+
+    fn show_context_menu(
+        widget: &gtk4::Widget,
+        x: f64,
+        y: f64,
+        uuid: &str,
+        is_group: bool,
+        sender: &ComponentSender<Sidebar>,
+        is_recycle_bin: bool,
+    ) {
+        let menu_model = gtk4::gio::Menu::new();
+        if is_recycle_bin {
+             menu_model.append(Some("Empty Recycle Bin"), Some("ctx.empty"));
+        } else {
+             menu_model.append(Some("Delete"), Some("ctx.delete"));
+        }
+
+        let popover = gtk4::PopoverMenu::from_model(Some(&menu_model));
+        popover.set_parent(widget);
+        popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+        popover.set_has_arrow(true);
+        
+        // Define actions
+        let action_group = gtk4::gio::SimpleActionGroup::new();
+        
+        let sender_clone = sender.clone();
+        let uuid_clone = uuid.to_string();
+        let action = gtk4::gio::SimpleAction::new("delete", None);
+        action.connect_activate(move |_, _| {
+             if is_recycle_bin {
+                  sender_clone.input(SidebarInput::EmptyRecycleBin(uuid_clone.clone())); 
+             } else if is_group {
+                sender_clone.input(SidebarInput::DeleteGroup(uuid_clone.clone()));
+            } else {
+                sender_clone.input(SidebarInput::DeleteEntry(uuid_clone.clone()));
+            }
+        });
+        action_group.add_action(&action);
+
+        if is_recycle_bin {
+             let sender_clone = sender.clone();
+             let uuid_clone = uuid.to_string();
+             let action = gtk4::gio::SimpleAction::new("empty", None);
+             action.connect_activate(move |_, _| {
+                 sender_clone.input(SidebarInput::EmptyRecycleBin(uuid_clone.clone()));
+             });
+             action_group.add_action(&action);
+        }
+        
+        popover.insert_action_group("ctx", Some(&action_group));
+
+        popover.popup();
     }
 }
