@@ -24,10 +24,13 @@ pub enum SidebarInput {
     AddGroup,
     /// Request to delete a group.
     DeleteGroup(String),
-    /// Request to delete an entry.
     DeleteEntry(String),
     /// Request to empty the recycle bin.
     EmptyRecycleBin(String),
+    /// Request to permanently delete a group.
+    PermanentDeleteGroup(String),
+    /// Request to permanently delete an entry.
+    PermanentDeleteEntry(String),
 }
 
 /// Output messages from the sidebar.
@@ -43,8 +46,11 @@ pub enum SidebarOutput {
     RequestDeleteGroup(String),
     /// User requested to delete an entry.
     RequestDeleteEntry(String),
-    /// User requested to empty the recycle bin.
     RequestEmptyRecycleBin(String),
+    /// User requested to permanently delete a group.
+    RequestPermanentDeleteGroup(String),
+    /// User requested to permanently delete an entry.
+    RequestPermanentDeleteEntry(String),
 }
 
 /// Sidebar model.
@@ -53,6 +59,7 @@ pub struct Sidebar {
     selected_uuid: Option<String>,
     expanded_uuids: HashSet<String>,
     hidden_groups: HashSet<String>,
+    context_menu: gtk4::PopoverMenu,
 }
 
 #[derive(Debug, Clone)]
@@ -120,10 +127,12 @@ impl Component for Sidebar {
                         sender.input(SidebarInput::SelectEntry(uuid.to_string()));
                     }
                 },
-            }
+            },
+
             }
         }
     }
+
 
     fn init(
         init: Self::Init,
@@ -131,16 +140,24 @@ impl Component for Sidebar {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         tracing::info!("Sidebar::init received initial_width: {}, min_width: {}", init.initial_width, init.min_width);
+        
+        let context_menu = gtk4::PopoverMenu::from_model(None::<&gtk4::gio::MenuModel>);
+        context_menu.set_has_arrow(true);
+        context_menu.set_position(gtk4::PositionType::Bottom);
+
         let model = Sidebar {
             root_group: None,
             selected_uuid: None,
             expanded_uuids: HashSet::new(),
             hidden_groups: init.hidden_groups.into_iter().collect(),
+            context_menu,
         };
 
         let widgets = view_output!();
 
         ComponentParts { model, widgets }
+
+
     }
 
     fn update_with_view(
@@ -205,17 +222,28 @@ impl Component for Sidebar {
             SidebarInput::EmptyRecycleBin(uuid) => {
                 let _ = sender.output(SidebarOutput::RequestEmptyRecycleBin(uuid));
             }
+            SidebarInput::PermanentDeleteGroup(uuid) => {
+                let _ = sender.output(SidebarOutput::RequestPermanentDeleteGroup(uuid));
+            }
+            SidebarInput::PermanentDeleteEntry(uuid) => {
+                let _ = sender.output(SidebarOutput::RequestPermanentDeleteEntry(uuid));
+            }
         }
     }
 }
 
 impl Sidebar {
     fn rebuild_list(&self, widgets: &mut <Sidebar as Component>::Widgets, sender: ComponentSender<Sidebar>) {
+        // Ensure context menu is not parented to any row that is about to be destroyed
+        self.context_menu.unparent();
+
         while let Some(row) = widgets.list_box.row_at_index(0) {
             widgets.list_box.remove(&row);
         }
 
         if let Some(root) = &self.root_group {
+            let count = root.children.len() + root.entries.len();
+            tracing::info!("Sidebar::rebuild_list root found. Children: {}, Entries: {}, Total: {}", root.children.len(), root.entries.len(), count);
             let mut levels = Vec::new();
             // Root itself is usually hidden in 2-pane abstract, but here we render children of root.
             // Wait, standard sidebar hides the root folder if it's just a container. 
@@ -227,12 +255,15 @@ impl Sidebar {
 
             for child in &root.children {
                 let is_last = current_idx == total_count - 1;
-                self.add_group_node(&widgets.list_box, child, &mut levels, is_last, &sender);
+                // Root children not under recycle bin unless root IS recycle bin? (Unlikely for root)
+                let is_under_bin = root.is_recycle_bin;
+                self.add_group_node(&widgets.list_box, child, &mut levels, is_last, &sender, is_under_bin, &self.context_menu);
                 current_idx += 1;
             }
             for entry in &root.entries {
                 let is_last = current_idx == total_count - 1;
-                self.add_entry_node(&widgets.list_box, entry, &mut levels, is_last, &sender);
+                let is_under_bin = root.is_recycle_bin;
+                self.add_entry_node(&widgets.list_box, entry, &mut levels, is_last, &sender, is_under_bin, &self.context_menu);
                 current_idx += 1;
             }
         }
@@ -290,6 +321,8 @@ impl Sidebar {
         levels: &mut Vec<bool>,
         is_last: bool,
         sender: &ComponentSender<Sidebar>,
+        is_under_recycle_bin: bool,
+        context_menu: &gtk4::PopoverMenu,
     ) {
         if self.hidden_groups.contains(&entry.title) {
             return;
@@ -364,9 +397,10 @@ impl Sidebar {
         gesture.set_button(3); // Right mouse button
         let sender_clone = sender.clone();
         let uuid_clone = entry.uuid.clone();
+        let context_menu_clone = context_menu.clone();
         gesture.connect_released(move |gesture, _n_press, x, y| {
             if let Some(widget) = gesture.widget() {
-                Self::show_context_menu(&widget, x, y, &uuid_clone, false, &sender_clone, false);
+                Self::show_context_menu(&widget, x, y, &uuid_clone, false, &sender_clone, false, is_under_recycle_bin, &context_menu_clone);
             }
         });
         row.add_controller(gesture);
@@ -381,6 +415,8 @@ impl Sidebar {
         levels: &mut Vec<bool>,
         is_last: bool,
         sender: &ComponentSender<Sidebar>,
+        is_under_recycle_bin: bool,
+        context_menu: &gtk4::PopoverMenu,
     ) {
         if self.hidden_groups.contains(&group.name) {
             return;
@@ -500,9 +536,13 @@ impl Sidebar {
         let sender_clone = sender.clone();
         let uuid_clone = group.uuid.clone();
         let is_recycle_bin = group.is_recycle_bin;
+        
+        let in_bin_context = is_under_recycle_bin; // If we are under bin
+        let context_menu_clone = context_menu.clone();
+
         gesture.connect_released(move |gesture, _n_press, x, y| {
             if let Some(widget) = gesture.widget() {
-                Self::show_context_menu(&widget, x, y, &uuid_clone, true, &sender_clone, is_recycle_bin);
+                Self::show_context_menu(&widget, x, y, &uuid_clone, true, &sender_clone, is_recycle_bin, in_bin_context, &context_menu_clone);
             }
         });
         row.add_controller(gesture);
@@ -513,15 +553,17 @@ impl Sidebar {
             levels.push(is_last);
             let total_child_count = group.children.len() + group.entries.len();
             let mut current_child_idx = 0;
+            
+            let next_under_bin = is_under_recycle_bin || group.is_recycle_bin;
 
             for child in &group.children {
                 let child_is_last = current_child_idx == total_child_count - 1;
-                self.add_group_node(list_box, child, levels, child_is_last, sender);
+                self.add_group_node(list_box, child, levels, child_is_last, sender, next_under_bin, context_menu);
                 current_child_idx += 1;
             }
             for entry in &group.entries {
                 let child_is_last = current_child_idx == total_child_count - 1;
-                self.add_entry_node(list_box, entry, levels, child_is_last, sender);
+                self.add_entry_node(list_box, entry, levels, child_is_last, sender, next_under_bin, context_menu);
                 current_child_idx += 1;
             }
             levels.pop();
@@ -536,18 +578,31 @@ impl Sidebar {
         is_group: bool,
         sender: &ComponentSender<Sidebar>,
         is_recycle_bin: bool,
+        is_under_recycle_bin: bool,
+        popover: &gtk4::PopoverMenu,
     ) {
         let menu_model = gtk4::gio::Menu::new();
         if is_recycle_bin {
              menu_model.append(Some("Empty Recycle Bin"), Some("ctx.empty"));
+        } else if is_under_recycle_bin {
+             menu_model.append(Some("Delete Permanently"), Some("ctx.delete_perm"));
         } else {
              menu_model.append(Some("Delete"), Some("ctx.delete"));
         }
 
-        let popover = gtk4::PopoverMenu::from_model(Some(&menu_model));
+        popover.set_menu_model(Some(&menu_model));
+        
+        // Parent the popover to the clicked widget OR the listbox row.
+        // If we parent to the widget (e.g. overlay), coordinates are local. 
+        // Important: Popover must have a parent to be realized.
+        
+        popover.unparent();
         popover.set_parent(widget);
-        popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-        popover.set_has_arrow(true);
+        
+        let target_x = x;
+        let target_y = y;
+        
+        popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(target_x as i32, target_y as i32, 1, 1)));
         
         // Define actions
         let action_group = gtk4::gio::SimpleActionGroup::new();
@@ -566,14 +621,27 @@ impl Sidebar {
         });
         action_group.add_action(&action);
 
-        if is_recycle_bin {
+        if is_recycle_bin || is_under_recycle_bin {
              let sender_clone = sender.clone();
              let uuid_clone = uuid.to_string();
-             let action = gtk4::gio::SimpleAction::new("empty", None);
-             action.connect_activate(move |_, _| {
-                 sender_clone.input(SidebarInput::EmptyRecycleBin(uuid_clone.clone()));
-             });
-             action_group.add_action(&action);
+             
+             if is_recycle_bin {
+                 let action = gtk4::gio::SimpleAction::new("empty", None);
+                 action.connect_activate(move |_, _| {
+                     sender_clone.input(SidebarInput::EmptyRecycleBin(uuid_clone.clone()));
+                 });
+                 action_group.add_action(&action);
+             } else {
+                 let action = gtk4::gio::SimpleAction::new("delete_perm", None);
+                 action.connect_activate(move |_, _| {
+                     if is_group {
+                        sender_clone.input(SidebarInput::PermanentDeleteGroup(uuid_clone.clone()));
+                     } else {
+                        sender_clone.input(SidebarInput::PermanentDeleteEntry(uuid_clone.clone()));
+                     }
+                 });
+                 action_group.add_action(&action);
+             }
         }
         
         popover.insert_action_group("ctx", Some(&action_group));

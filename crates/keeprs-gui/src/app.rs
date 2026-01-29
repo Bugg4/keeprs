@@ -7,6 +7,7 @@ use crate::components::info_bar::{format_save_time, InfoBar, InfoBarInput};
 use crate::components::search_palette::{SearchPalette, SearchPaletteInput, SearchPaletteOutput};
 use crate::components::sidebar::{Sidebar, SidebarInit, SidebarInput, SidebarOutput};
 use crate::components::unlock::{UnlockDialog, UnlockInput, UnlockOutput};
+use crate::components::password_confirmation::{PasswordConfirmation, PasswordConfirmationInput, PasswordConfirmationOutput};
 use crate::config::Config;
 use keeprs_core::{Entry, Group, KeepassDatabase};
 
@@ -79,6 +80,12 @@ pub enum AppInput {
     SaveAttachment { filename: String, data: Vec<u8> },
     /// Open attachment.
     OpenAttachment { filename: String, data: Vec<u8> },
+    /// Request to permanently delete an entry (shows confirmation).
+    VerifyPermanentDeleteEntry(String),
+    /// Request to permanently delete a group (shows confirmation).
+    VerifyPermanentDeleteGroup(String),
+    /// Password confirmed provided for permanent action.
+    PermanentDeleteConfirmed { password: String, action_id: String },
     /// Entry saved from edit dialog.
     EntrySaved(Entry),
     /// Group saved from edit dialog.
@@ -115,6 +122,7 @@ pub struct App {
     entry_edit: Controller<EntryEdit>,
     group_edit: Controller<GroupEdit>,
     info_bar: Controller<InfoBar>,
+    password_confirmation: Controller<PasswordConfirmation>,
 }
 
 #[relm4::component(pub)]
@@ -227,9 +235,12 @@ impl Component for App {
                     AppInput::SidebarEntrySelected(uuid)
                 }
                 SidebarOutput::RequestAddGroup => AppInput::AddGroup,
+
                 SidebarOutput::RequestDeleteGroup(uuid) => AppInput::DeleteGroup(uuid),
                 SidebarOutput::RequestDeleteEntry(uuid) => AppInput::DeleteEntry(uuid),
                 SidebarOutput::RequestEmptyRecycleBin(uuid) => AppInput::EmptyRecycleBin(uuid),
+                SidebarOutput::RequestPermanentDeleteGroup(uuid) => AppInput::VerifyPermanentDeleteGroup(uuid),
+                SidebarOutput::RequestPermanentDeleteEntry(uuid) => AppInput::VerifyPermanentDeleteEntry(uuid),
             });
 
         let entry_browser = EntryBrowser::builder()
@@ -237,9 +248,11 @@ impl Component for App {
             .forward(sender.input_sender(), |output| match output {
                 EntryBrowserOutput::EntryEdited(entry) => AppInput::EntrySaved(entry),
                 EntryBrowserOutput::DeleteEntry(uuid) => AppInput::DeleteEntry(uuid),
+
                 EntryBrowserOutput::AddEntry => AppInput::AddEntry,
                 EntryBrowserOutput::SaveAttachment { filename, data } => AppInput::SaveAttachment { filename, data },
                 EntryBrowserOutput::OpenAttachment { filename, data } => AppInput::OpenAttachment { filename, data },
+                EntryBrowserOutput::RequestPermanentDeleteEntry(uuid) => AppInput::VerifyPermanentDeleteEntry(uuid),
             });
 
         let entry_edit = EntryEdit::builder()
@@ -260,6 +273,15 @@ impl Component for App {
             .launch(())
             .detach();
 
+        let password_confirmation = PasswordConfirmation::builder()
+            .launch(())
+            .forward(sender.input_sender(), |output| match output {
+                PasswordConfirmationOutput::Confirmed { password, action_id } => {
+                     AppInput::PermanentDeleteConfirmed { password, action_id }
+                }
+                PasswordConfirmationOutput::Cancelled => AppInput::NoOp,
+            });
+
         let mut model = App {
             state: AppState::Locked,
             config,
@@ -278,7 +300,9 @@ impl Component for App {
             entry_browser,
             entry_edit,
             group_edit,
+
             info_bar,
+            password_confirmation,
         };
         
         // Auto-unlock in dev mode
@@ -356,7 +380,7 @@ impl Component for App {
                          }
                     }
                     Err(e) => {
-                        tracing::warn!("Auto-unlock failed: {}", e);
+                        tracing::warn!("Auto-unlock failed: {:#}", e);
                     }
                 }
             }
@@ -415,7 +439,9 @@ impl Component for App {
 
         // Connect dialogs to main window
         model.entry_edit.widget().set_transient_for(Some(&widgets.main_window));
+
         model.group_edit.widget().set_transient_for(Some(&widgets.main_window));
+        model.password_confirmation.widget().set_transient_for(Some(&widgets.main_window));
 
         ComponentParts { model, widgets }
     }
@@ -463,7 +489,7 @@ impl Component for App {
                         widgets.main_stack.set_visible_child_name("main");
                     }
                     Err(e) => {
-                        self.unlock.emit(UnlockInput::ShowError(format!("Failed to unlock: {}", e)));
+                        self.unlock.emit(UnlockInput::ShowError(format!("Failed to unlock: {:#}", e)));
                     }
                 }
             }
@@ -475,8 +501,18 @@ impl Component for App {
                 self.current_group_uuid = Some(uuid.clone());
 
                 // Find the group and show its entries in entry browser
+                // Find the group and show its entries in entry browser
                 if let Some(ref root) = self.root_group {
                     if let Some(group) = find_group_by_uuid(root, &uuid) {
+                        // Check if in recycle bin
+                        let in_trash = if let Some(ref db) = self.database {
+                             if let Ok(db) = db.read() {
+                                 db.is_inside_recycle_bin(&group.uuid)
+                             } else { false }
+                        } else { false };
+
+                        self.entry_browser.emit(EntryBrowserInput::SetTrashMode(in_trash));
+
                         self.entry_browser.emit(EntryBrowserInput::SelectGroup {
                             uuid: uuid.clone(),
                             name: group.name.clone(),
@@ -509,6 +545,15 @@ impl Component for App {
                 
                 if let Some(ref root) = self.root_group {
                     if let Some(group) = find_group_by_uuid(root, &group_uuid) {
+                        // Check if in recycle bin
+                        let in_trash = if let Some(ref db) = self.database {
+                             if let Ok(db) = db.read() {
+                                 db.is_inside_recycle_bin(&group.uuid)
+                             } else { false }
+                        } else { false };
+
+                        self.entry_browser.emit(EntryBrowserInput::SetTrashMode(in_trash));
+
                         self.entry_browser.emit(EntryBrowserInput::SelectGroup {
                             uuid: group_uuid.clone(),
                             name: group.name.clone(),
@@ -604,22 +649,86 @@ impl Component for App {
                 }
             }
             AppInput::EmptyRecycleBin(_uuid) => {
+                 // Prompt for password
+                 self.password_confirmation.emit(PasswordConfirmationInput::Show {
+                     message: "This will permanently delete all items in the Recycle Bin. This action cannot be undone.".to_string(),
+                     action_id: "empty_recycle_bin".to_string(),
+                 });
+            }
+            AppInput::VerifyPermanentDeleteGroup(uuid) => {
+                  self.password_confirmation.emit(PasswordConfirmationInput::Show {
+                     message: "This will permanently delete this group and all its contents. This action cannot be undone.".to_string(),
+                     action_id: format!("delete_group_perm:{}", uuid),
+                 });
+            }
+            AppInput::VerifyPermanentDeleteEntry(uuid) => {
+                  self.password_confirmation.emit(PasswordConfirmationInput::Show {
+                     message: "This will permanently delete this entry. This action cannot be undone.".to_string(),
+                     action_id: format!("delete_entry_perm:{}", uuid),
+                 });
+            }
+            AppInput::PermanentDeleteConfirmed { password, action_id } => {
+                // Verify password matches DB
+                // We use KeepassDatabase::unlock to verify
+                let verified = match KeepassDatabase::unlock(&self.config.database_path, &password) {
+                     Ok(_) => true,
+                     Err(_) => false,
+                };
+
+                if !verified {
+                    self.password_confirmation.emit(PasswordConfirmationInput::ShowError("Incorrect password".to_string()));
+                    return;
+                }
+
+                self.password_confirmation.emit(PasswordConfirmationInput::Cancel); // Close dialog
+
+                // Execute action
                 if let Some(ref db) = self.database {
                     if let Ok(mut db) = db.write() {
-                        if let Err(e) = db.empty_recycle_bin() {
-                            tracing::error!("Failed to empty recycle bin: {}", e);
-                            // TODO: Show error dialog
+                        let res = if action_id == "empty_recycle_bin" {
+                            db.empty_recycle_bin()
+                        } else if let Some(uuid) = action_id.strip_prefix("delete_group_perm:") {
+                            db.delete_group_permanently(uuid)
+                        } else if let Some(uuid) = action_id.strip_prefix("delete_entry_perm:") {
+                            db.delete_entry_permanently(uuid)
                         } else {
-                             tracing::info!("Recycle Bin emptied");
-                             // Refresh
+                            Ok(())
+                        };
+
+                        if let Err(e) = res {
+                            tracing::error!("Failed to execute permanent delete: {}", e);
+                            // TODO: Show global error
+                        } else {
+                             // Success - refresh
+                             tracing::info!("Permanent delete successful");
                              let root = db.root_group().clone();
                              self.root_group = Some(root.clone());
                              
+                             self.unsaved_changes = true;
+                             self.info_bar.emit(InfoBarInput::SetUnsavedChanges(true));
+
                              self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
                              self.search_palette.emit(SearchPaletteInput::SetRootGroup(root.clone()));
 
+                             // Re-navigate if needed
+                             if action_id == "empty_recycle_bin" {
+                                 // Usually we stay on bin
+                             } else {
+                                 // If deleted current group/entry, move up
+                                 // For now simple refresh to root selection or same selection if valid
+                                 // But since we refreshed root, ID matching handles it?
+                                 // If current group was deleted, `GroupSelected` logic might fail to find it.
+                                 // App handles this gracefully by not updating or showing empty?
+                             }
+
                              if let Some(ref group_uuid) = self.current_group_uuid {
-                                  sender.input(AppInput::GroupSelected(group_uuid.clone()));
+                                  // Re-emit group selected to refresh view, or root if not found
+                                  if find_group_by_uuid(&root, group_uuid).is_some() {
+                                      sender.input(AppInput::GroupSelected(group_uuid.clone()));
+                                  } else {
+                                      // Deleted current group -> go to root
+                                      sender.input(AppInput::GroupSelected(root.uuid.clone()));
+                                  }
                              }
                              
                              sender.input(AppInput::SaveDatabase);

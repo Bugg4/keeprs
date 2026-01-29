@@ -151,12 +151,30 @@ impl KeepassDatabase {
 
     /// Save the database to disk.
     pub fn save(&self) -> Result<()> {
-        let mut file = std::fs::File::create(&self.path)
-            .with_context(|| format!("Failed to create database file: {}", self.path.display()))?;
+        // Atomic save: write to temp file then rename
+        let mut temp_path = self.path.clone();
+        if let Some(ext) = temp_path.extension() {
+            let mut ext = ext.to_os_string();
+            ext.push(".tmp");
+            temp_path.set_extension(ext);
+        } else {
+            temp_path.set_extension("tmp");
+        }
 
-        self.db
-            .save(&mut file, self.key.clone())
-            .with_context(|| "Failed to save database")?;
+        {
+            let mut file = std::fs::File::create(&temp_path)
+                .with_context(|| format!("Failed to create temp database file: {}", temp_path.display()))?;
+
+            self.db
+                .save(&mut file, self.key.clone())
+                .with_context(|| "Failed to save database to temp file")?;
+            
+            // Ensure data is flushed to disk
+            file.sync_all().context("Failed to sync temp database file")?;
+        }
+
+        std::fs::rename(&temp_path, &self.path)
+            .with_context(|| format!("Failed to replace database file: {}", self.path.display()))?;
 
         Ok(())
     }
@@ -269,6 +287,59 @@ impl KeepassDatabase {
         }
     }
 
+    pub fn is_inside_recycle_bin(&self, uuid: &str) -> bool {
+        if let Some(ref bin_uuid) = self.db.meta.recyclebin_uuid {
+            let bin_uuid_str = bin_uuid.to_string();
+            if bin_uuid_str == uuid {
+                return true;
+            }
+            Self::is_descendant_of(&self.db.root, uuid, &bin_uuid_str)
+        } else {
+            false
+        }
+    }
+
+    fn is_descendant_of(group: &keepass::db::Group, target_uuid: &str, ancestor_uuid: &str) -> bool {
+        // If this group is the ancestor, then any target found inside is a descendant
+        let is_ancestor = group.uuid.to_string() == ancestor_uuid;
+        
+        if is_ancestor {
+             // If we found the ancestor, we just need to find the target inside it
+             return Self::contains_node(group, target_uuid);
+        }
+
+        // Otherwise recurse
+        for child in &group.children {
+            if let keepass::db::Node::Group(g) = child {
+                if Self::is_descendant_of(g, target_uuid, ancestor_uuid) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn contains_node(group: &keepass::db::Group, target_uuid: &str) -> bool {
+        if group.uuid.to_string() == target_uuid {
+             return true; 
+        }
+        for node in &group.children {
+            match node {
+                keepass::db::Node::Group(g) => {
+                    if Self::contains_node(g, target_uuid) {
+                        return true;
+                    }
+                }
+                keepass::db::Node::Entry(e) => {
+                    if e.uuid.to_string() == target_uuid {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     fn get_or_create_recycle_bin(&mut self) -> Result<String> {
         if let Some(ref uuid) = self.db.meta.recyclebin_uuid {
             // verify it exists... assuming yes for now for simplicity
@@ -368,6 +439,22 @@ impl KeepassDatabase {
 
     pub fn delete_group(&mut self, uuid: &str) -> Result<()> {
         self.recycle_node(uuid, true)
+    }
+
+    pub fn delete_entry_permanently(&mut self, uuid: &str) -> Result<()> {
+        if Self::delete_node_recursive(&mut self.db.root, uuid, false).is_some() {
+            Ok(())
+        } else {
+             anyhow::bail!("Entry with UUID {} not found", uuid)
+        }
+    }
+
+    pub fn delete_group_permanently(&mut self, uuid: &str) -> Result<()> {
+         if Self::delete_node_recursive(&mut self.db.root, uuid, true).is_some() {
+            Ok(())
+        } else {
+             anyhow::bail!("Group with UUID {} not found", uuid)
+        }
     }
     
     fn delete_node_recursive(group: &mut keepass::db::Group, target_uuid: &str, is_group: bool) -> Option<keepass::db::Node> {

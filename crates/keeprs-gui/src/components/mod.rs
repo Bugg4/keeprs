@@ -6,3 +6,4 @@ pub mod group_edit;
 pub mod search_palette;
 pub mod info_bar;
 pub mod unlock;
+pub mod password_confirmation;

@@ -68,6 +68,8 @@ pub enum EntryBrowserInput {
     EditNotes(String),
     /// Favicon loaded for URL.
     FaviconLoaded { #[allow(dead_code)] url: String, data: Vec<u8> },
+    /// Set whether we are in trash mode (enables permanent deletion).
+    SetTrashMode(bool),
 }
 
 /// Output messages from entry browser.
@@ -77,6 +79,8 @@ pub enum EntryBrowserOutput {
     AddEntry,
     /// User wants to delete an entry.
     DeleteEntry(String),
+    /// User wants to permanently delete an entry.
+    RequestPermanentDeleteEntry(String),
     /// User wants to save an attachment.
     SaveAttachment { filename: String, data: Vec<u8> },
     /// User wants to open an attachment.
@@ -109,6 +113,8 @@ pub struct EntryBrowser {
     totp_visible: bool,
     /// Current favicon image widget (for updating when favicon loads).
     favicon_image: Rc<RefCell<Option<gtk4::Image>>>,
+    /// Whether we are in trash mode (permanent deletion).
+    trash_mode: bool,
 }
 
 #[relm4::component(pub)]
@@ -173,6 +179,7 @@ impl Component for EntryBrowser {
             show_totp_visible,
             totp_visible: show_totp_visible,
             favicon_image: Rc::new(RefCell::new(None)),
+            trash_mode: false,
         };
 
         let widgets = view_output!();
@@ -201,6 +208,8 @@ impl Component for EntryBrowser {
                 self.totp_visible = self.show_totp_visible;
                 self.editing = false;
                 self.edited_entry = None;
+                // Reset trash mode unless explicitly set? No, safer to reset and expect SetTrashMode if needed.
+                self.trash_mode = false;
                 self.rebuild_columns(widgets, &sender);
             }
             EntryBrowserInput::SelectEntry { uuid, entry } => {
@@ -297,8 +306,16 @@ impl Component for EntryBrowser {
             }
             EntryBrowserInput::DeleteEntry => {
                 if let Some(ref entry) = self.selected_entry {
-                    let _ = sender.output(EntryBrowserOutput::DeleteEntry(entry.uuid.clone()));
+                    if self.trash_mode {
+                         let _ = sender.output(EntryBrowserOutput::RequestPermanentDeleteEntry(entry.uuid.clone()));
+                    } else {
+                         let _ = sender.output(EntryBrowserOutput::DeleteEntry(entry.uuid.clone()));
+                    }
                 }
+            }
+            EntryBrowserInput::SetTrashMode(is_trash) => {
+                self.trash_mode = is_trash;
+                self.rebuild_columns(widgets, &sender);
             }
             EntryBrowserInput::SaveAttachment(filename) => {
                 if let Some(ref entry) = self.selected_entry {
@@ -544,7 +561,12 @@ impl EntryBrowser {
 
             let delete_btn = gtk4::Button::from_icon_name("user-trash-symbolic");
             delete_btn.add_css_class("flat");
-            delete_btn.set_tooltip_text(Some("Delete Entry"));
+            if self.trash_mode {
+                 delete_btn.set_tooltip_text(Some("Delete Permanently"));
+                 delete_btn.add_css_class("destructive-action");
+            } else {
+                 delete_btn.set_tooltip_text(Some("Delete Entry"));
+            }
             let sender_clone = sender.clone();
             delete_btn.connect_clicked(move |_| {
                 sender_clone.input(EntryBrowserInput::DeleteEntry);
