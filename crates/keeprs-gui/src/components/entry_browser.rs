@@ -408,12 +408,16 @@ impl EntryBrowser {
         let column = self.build_entry_list_column(sender);
         widgets.columns_box.append(&column);
 
-        // Build entry detail column (if entry is selected)
-        if let Some(ref entry) = self.selected_entry {
-            let sep = gtk4::Separator::new(gtk4::Orientation::Vertical);
-            widgets.columns_box.append(&sep);
+        // Always show divider
+        let sep = gtk4::Separator::new(gtk4::Orientation::Vertical);
+        widgets.columns_box.append(&sep);
 
+        // Build entry detail column or empty state
+        if let Some(ref entry) = self.selected_entry {
             let column = self.build_entry_detail_column(entry, sender);
+            widgets.columns_box.append(&column);
+        } else {
+            let column = self.build_empty_state_column();
             widgets.columns_box.append(&column);
         }
     }
@@ -522,6 +526,34 @@ impl EntryBrowser {
         scrolled.set_child(Some(&list_box));
         column.append(&scrolled);
 
+        column
+    }
+
+    /// Build the empty state column.
+    fn build_empty_state_column(&self) -> gtk4::Box {
+        let column = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        column.set_width_request(COLUMN_MIN_WIDTH);
+        column.set_hexpand(true);
+        column.set_vexpand(true);
+        column.set_valign(gtk4::Align::Center);
+        column.set_halign(gtk4::Align::Center);
+
+        let vbox = gtk4::Box::new(gtk4::Orientation::Vertical, 16);
+        vbox.set_halign(gtk4::Align::Center);
+        
+        // Icon
+        let icon = gtk4::Image::from_icon_name("text-x-generic-symbolic");
+        icon.set_pixel_size(64);
+        icon.add_css_class("dim-label");
+        vbox.append(&icon);
+
+        // Label
+        let label = gtk4::Label::new(None);
+        label.set_markup("<i>No entry selected</i>");
+        label.add_css_class("dim-label");
+        vbox.append(&label);
+
+        column.append(&vbox);
         column
     }
 
