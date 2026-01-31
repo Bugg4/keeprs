@@ -432,14 +432,7 @@ impl EntryBrowser {
         let toolbar = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
         toolbar.set_margin_all(8);
 
-        let add_btn = gtk4::Button::new();
-        add_btn.add_css_class("flat");
-        add_btn.set_tooltip_text(Some("Add Entry"));
-        
-        let btn_content = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
-        btn_content.append(&gtk4::Image::from_icon_name("dialog-password-symbolic"));
-        btn_content.append(&gtk4::Image::from_icon_name("list-add-symbolic"));
-        add_btn.set_child(Some(&btn_content));
+        let add_btn = crate::components::common::create_composite_add_button("Add Entry", "dialog-password-symbolic");
 
         let sender_clone = sender.clone();
         add_btn.connect_clicked(move |_| {

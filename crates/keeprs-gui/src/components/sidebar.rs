@@ -88,7 +88,6 @@ impl Component for Sidebar {
                 set_margin_all: 8,
                 
                 gtk4::Button {
-                    add_css_class: "flat",
                     set_tooltip_text: Some("New Folder"),
                     set_halign: gtk4::Align::Start,
                     connect_clicked => SidebarInput::AddGroup,
