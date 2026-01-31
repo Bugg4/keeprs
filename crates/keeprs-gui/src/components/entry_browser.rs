@@ -1197,16 +1197,7 @@ impl EntryBrowser {
     where
         F: Fn(&ComponentSender<Self>, String) -> EntryBrowserInput + 'static,
     {
-        let row = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-
-        let label_widget = gtk4::Label::new(Some(label));
-        label_widget.add_css_class("dim-label");
-        label_widget.set_halign(gtk4::Align::Start);
-        row.append(&label_widget);
-
-        let entry = gtk4::Entry::new();
-        entry.set_text(value);
-        entry.set_hexpand(true);
+        let (row, entry) = crate::components::common::create_text_entry_row(label, value);
 
         let sender_clone = sender.clone();
         entry.connect_changed(move |e| {
@@ -1214,7 +1205,6 @@ impl EntryBrowser {
             sender_clone.input(make_input(&sender_clone, text));
         });
 
-        row.append(&entry);
         container.append(&row);
     }
 
@@ -1226,18 +1216,7 @@ impl EntryBrowser {
         value: &str,
         sender: &ComponentSender<Self>,
     ) {
-        let row = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
-
-        let label_widget = gtk4::Label::new(Some(label));
-        label_widget.add_css_class("dim-label");
-        label_widget.set_halign(gtk4::Align::Start);
-        row.append(&label_widget);
-
-        let entry = gtk4::PasswordEntry::new();
-        entry.set_text(value);
-        entry.set_show_peek_icon(true);
-        entry.set_hexpand(true);
-        entry.add_css_class("monospace");
+        let (row, entry) = crate::components::common::create_password_entry_row(label, value);
 
         let sender_clone = sender.clone();
         entry.connect_changed(move |e| {
@@ -1245,7 +1224,6 @@ impl EntryBrowser {
             sender_clone.input(EntryBrowserInput::EditPassword(text));
         });
 
-        row.append(&entry);
         container.append(&row);
     }
 
@@ -1257,21 +1235,10 @@ impl EntryBrowser {
         value: &str,
         sender: &ComponentSender<Self>,
     ) {
-        let row = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+        let (row, text_view) = crate::components::common::create_text_area_row(label, value);
 
-        let label_widget = gtk4::Label::new(Some(label));
-        label_widget.add_css_class("dim-label");
-        label_widget.set_halign(gtk4::Align::Start);
-        row.append(&label_widget);
-
-        let frame = gtk4::Frame::new(None);
-        frame.set_height_request(100);
-
-        let text_view = gtk4::TextView::new();
-        text_view.set_wrap_mode(gtk4::WrapMode::Word);
-        text_view.set_margin_all(8);
+        // Add monospace for notes if desired
         text_view.add_css_class("monospace");
-        text_view.buffer().set_text(value);
 
         let sender_clone = sender.clone();
         text_view.buffer().connect_changed(move |buf| {
@@ -1279,8 +1246,6 @@ impl EntryBrowser {
             sender_clone.input(EntryBrowserInput::EditNotes(text));
         });
 
-        frame.set_child(Some(&text_view));
-        row.append(&frame);
         container.append(&row);
     }
 }
