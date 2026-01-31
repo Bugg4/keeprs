@@ -1,4 +1,4 @@
-pub mod search_bar;
+
 pub mod sidebar;
 pub mod entry_browser;
 pub mod entry_edit;
@@ -8,3 +8,4 @@ pub mod info_bar;
 pub mod unlock;
 pub mod password_confirmation;
 pub mod common;
+pub mod entry_detail_view;

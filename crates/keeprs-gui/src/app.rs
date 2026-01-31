@@ -133,13 +133,13 @@ impl Component for App {
     type CommandOutput = ();
 
     view! {
-        #[name = "main_window"]
+        #[name = "_main_window"]
         gtk4::ApplicationWindow {
             set_title: Some("Keeprs"),
             set_default_width: 1100,
             set_default_height: 700,
 
-            #[name = "main_stack"]
+            #[name = "_main_stack"]
             gtk4::Stack {
                 set_transition_type: gtk4::StackTransitionType::Crossfade,
 
@@ -161,7 +161,7 @@ impl Component for App {
                     append = &gtk4::Overlay {
                         set_vexpand: true,
                         #[wrap(Some)]
-                        #[name = "main_paned"]
+                        #[name = "_main_paned"]
                         set_child = &gtk4::Paned {
                             set_orientation: gtk4::Orientation::Horizontal,
                             set_shrink_start_child: false, // Enforce minimum width
@@ -424,24 +424,24 @@ impl Component for App {
             gtk4::glib::Propagation::Proceed
         });
         
-        widgets.main_window.add_controller(key_controller);
+        widgets._main_window.add_controller(key_controller);
 
         // Set initial sidebar width from config
-        widgets.main_paned.set_position(model.config.sidebar_initial_width);
+        widgets._main_paned.set_position(model.config.sidebar_initial_width);
         tracing::info!("Set main_paned position to: {}", model.config.sidebar_initial_width);
 
         // Start on unlock screen vs main depending on state
         if model.state == AppState::Unlocked {
-            widgets.main_stack.set_visible_child_name("main");
+            widgets._main_stack.set_visible_child_name("main");
         } else {
-            widgets.main_stack.set_visible_child_name("unlock");
+            widgets._main_stack.set_visible_child_name("unlock");
         }
 
         // Connect dialogs to main window
-        model.entry_edit.widget().set_transient_for(Some(&widgets.main_window));
+        model.entry_edit.widget().set_transient_for(Some(&widgets._main_window));
 
-        model.group_edit.widget().set_transient_for(Some(&widgets.main_window));
-        model.password_confirmation.widget().set_transient_for(Some(&widgets.main_window));
+        model.group_edit.widget().set_transient_for(Some(&widgets._main_window));
+        model.password_confirmation.widget().set_transient_for(Some(&widgets._main_window));
 
         ComponentParts { model, widgets }
     }
@@ -486,7 +486,7 @@ impl Component for App {
                         self.entry_browser.emit(EntryBrowserInput::SetRootGroup(root.clone()));
 
                         // Switch to main view
-                        widgets.main_stack.set_visible_child_name("main");
+                        widgets._main_stack.set_visible_child_name("main");
                     }
                     Err(e) => {
                         self.unlock.emit(UnlockInput::ShowError(format!("Failed to unlock: {:#}", e)));
@@ -766,7 +766,7 @@ impl Component for App {
                                      // Usually we select the NEW group.
                                      
                                      // Let's select the new group
-                                     if let Some(new_group) = find_group_by_uuid(&root, &new_uuid) {
+                                     if let Some(_new_group) = find_group_by_uuid(&root, &new_uuid) {
                                           sender.input(AppInput::GroupSelected(new_uuid));
                                      }
                                      
@@ -816,7 +816,7 @@ impl Component for App {
                                              
                                              // Refactored logic:
                                              let root = db.root_group().clone();
-                                             let root_clone = root.clone();
+                                             let _root_clone = root.clone();
                                              self.root_group = Some(root.clone());
                                              
                                              self.unsaved_changes = true;
@@ -903,7 +903,7 @@ impl Component for App {
             AppInput::SaveAttachment { filename, data } => {
                 let file_chooser = gtk4::FileChooserNative::new(
                     Some("Save Attachment"),
-                    Some(&widgets.main_window),
+                    Some(&widgets._main_window),
                     gtk4::FileChooserAction::Save,
                     Some("Save"),
                     Some("Cancel"),

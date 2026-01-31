@@ -118,7 +118,7 @@ impl Component for Sidebar {
                 set_min_content_width: init.min_width,
                 set_max_content_width: init.initial_width,
 
-            #[name = "list_box"]
+            #[name = "_list_box"]
             gtk4::ListBox {
                 add_css_class: "navigation-sidebar",
                 set_selection_mode: gtk4::SelectionMode::Single,
@@ -207,7 +207,7 @@ impl Component for Sidebar {
                     }
                 }
 
-                self.select_row_by_uuid(&widgets.list_box, &uuid);
+                self.select_row_by_uuid(&widgets._list_box, &uuid);
             }
             SidebarInput::ToggleExpand(uuid) => {
                 if self.expanded_uuids.contains(&uuid) {
@@ -244,8 +244,8 @@ impl Sidebar {
         // Ensure context menu is not parented to any row that is about to be destroyed
         self.context_menu.unparent();
 
-        while let Some(row) = widgets.list_box.row_at_index(0) {
-            widgets.list_box.remove(&row);
+        while let Some(row) = widgets._list_box.row_at_index(0) {
+            widgets._list_box.remove(&row);
         }
 
         if let Some(root) = &self.root_group {
@@ -264,19 +264,19 @@ impl Sidebar {
                 let is_last = current_idx == total_count - 1;
                 // Root children not under recycle bin unless root IS recycle bin? (Unlikely for root)
                 let is_under_bin = root.is_recycle_bin;
-                self.add_group_node(&widgets.list_box, child, &mut levels, is_last, &sender, is_under_bin, &self.context_menu);
+                self.add_group_node(&widgets._list_box, child, &mut levels, is_last, &sender, is_under_bin, &self.context_menu);
                 current_idx += 1;
             }
             for entry in &root.entries {
                 let is_last = current_idx == total_count - 1;
                 let is_under_bin = root.is_recycle_bin;
-                self.add_entry_node(&widgets.list_box, entry, &mut levels, is_last, &sender, is_under_bin, &self.context_menu);
+                self.add_entry_node(&widgets._list_box, entry, &mut levels, is_last, &sender, is_under_bin, &self.context_menu);
                 current_idx += 1;
             }
         }
 
         if let Some(uuid) = &self.selected_uuid {
-            self.select_row_by_uuid(&widgets.list_box, uuid);
+            self.select_row_by_uuid(&widgets._list_box, uuid);
         }
     }
 

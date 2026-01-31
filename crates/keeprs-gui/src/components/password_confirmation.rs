@@ -99,7 +99,7 @@ impl Component for PasswordConfirmation {
                             add_css_class: "dim-label",
                         },
 
-                        #[name = "password_entry"]
+                        #[name = "_password_entry"]
                         gtk4::PasswordEntry {
                             set_placeholder_text: Some("Enter master password"),
                             set_show_peek_icon: true,

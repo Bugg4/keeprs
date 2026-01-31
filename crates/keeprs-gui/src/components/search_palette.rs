@@ -114,7 +114,7 @@ impl Component for SearchPalette {
                     set_spacing: 0,
 
                     // Search entry
-                    #[name = "search_entry"]
+                    #[name = "_search_entry"]
                     gtk4::SearchEntry {
                         set_placeholder_text: Some("Search entries and folders..."),
                         set_margin_all: 12,
@@ -134,7 +134,7 @@ impl Component for SearchPalette {
                         set_propagate_natural_height: true,
                         set_hscrollbar_policy: gtk4::PolicyType::Never,
 
-                        #[name = "results_box"]
+                        #[name = "_results_box"]
                         gtk4::ListBox {
                             set_selection_mode: gtk4::SelectionMode::Single,
                             add_css_class: "boxed-list",
@@ -177,7 +177,7 @@ impl Component for SearchPalette {
                 _ => gtk4::glib::Propagation::Proceed,
             }
         });
-        widgets.search_entry.add_controller(key_controller);
+        widgets._search_entry.add_controller(key_controller);
 
         ComponentParts { model, widgets }
     }
@@ -198,8 +198,8 @@ impl Component for SearchPalette {
                 self.query.clear();
                 self.results.clear();
                 self.selected_index = 0;
-                widgets.search_entry.set_text("");
-                widgets.search_entry.grab_focus();
+                widgets._search_entry.set_text("");
+                widgets._search_entry.grab_focus();
                 self.rebuild_results(widgets);
             }
             SearchPaletteInput::Hide => {
@@ -383,8 +383,8 @@ impl SearchPalette {
     /// Rebuild the results list UI.
     fn rebuild_results(&self, widgets: &mut <Self as Component>::Widgets) {
         // Clear existing
-        while let Some(row) = widgets.results_box.row_at_index(0) {
-            widgets.results_box.remove(&row);
+        while let Some(row) = widgets._results_box.row_at_index(0) {
+            widgets._results_box.remove(&row);
         }
 
         for (i, result) in self.results.iter().enumerate() {
@@ -455,19 +455,19 @@ impl SearchPalette {
             }
 
             row.set_child(Some(&hbox));
-            widgets.results_box.append(&row);
+            widgets._results_box.append(&row);
 
             // Select first item
             if i == self.selected_index {
-                widgets.results_box.select_row(Some(&row));
+                widgets._results_box.select_row(Some(&row));
             }
         }
     }
 
     /// Update selection highlight.
     fn update_selection(&self, widgets: &mut <Self as Component>::Widgets) {
-        if let Some(row) = widgets.results_box.row_at_index(self.selected_index as i32) {
-            widgets.results_box.select_row(Some(&row));
+        if let Some(row) = widgets._results_box.row_at_index(self.selected_index as i32) {
+            widgets._results_box.select_row(Some(&row));
             // Scroll to visible
             row.grab_focus();
         }

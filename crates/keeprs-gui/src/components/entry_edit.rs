@@ -200,7 +200,7 @@ impl Component for EntryEdit {
                             gtk4::Frame {
                                 set_height_request: 100,
 
-                                #[name = "notes_view"]
+                                #[name = "_notes_view"]
                                 gtk4::TextView {
                                     set_wrap_mode: gtk4::WrapMode::Word,
                                     set_margin_all: 8,
@@ -227,7 +227,7 @@ impl Component for EntryEdit {
         let widgets = view_output!();
 
         // Set up notes buffer change handler
-        let buffer = widgets.notes_view.buffer();
+        let buffer = widgets._notes_view.buffer();
         let sender_clone = sender.clone();
         buffer.connect_changed(move |buf| {
             let text = buf.text(&buf.start_iter(), &buf.end_iter(), false);
@@ -249,7 +249,7 @@ impl Component for EntryEdit {
                 self.entry = Entry::new();
                 self.is_new = true;
                 self.visible = true;
-                widgets.notes_view.buffer().set_text("");
+                widgets._notes_view.buffer().set_text("");
                 widgets.title_entry.set_text("");
                 widgets.username_entry.set_text("");
                 widgets.password_entry.set_text("");
@@ -257,7 +257,7 @@ impl Component for EntryEdit {
                 widgets.dialog.present();
             }
             EntryEditInput::Edit(entry) => {
-                widgets.notes_view.buffer().set_text(&entry.notes);
+                widgets._notes_view.buffer().set_text(&entry.notes);
                 widgets.title_entry.set_text(&entry.title);
                 widgets.username_entry.set_text(&entry.username);
                 widgets.password_entry.set_text(&entry.password);
