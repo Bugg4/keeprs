@@ -87,18 +87,23 @@ impl Component for Sidebar {
                 set_spacing: 8,
                 set_margin_all: 8,
                 
-                gtk4::Label {
-                    set_text: "Folders",
-                    add_css_class: "heading",
-                    set_halign: gtk4::Align::Start,
-                    set_hexpand: true,
-                },
-                
                 gtk4::Button {
-                    set_icon_name: "list-add-symbolic", // or folder-new-symbolic
                     add_css_class: "flat",
                     set_tooltip_text: Some("New Folder"),
+                    set_halign: gtk4::Align::Start,
                     connect_clicked => SidebarInput::AddGroup,
+
+                    gtk4::Box {
+                        set_orientation: gtk4::Orientation::Horizontal,
+                        set_spacing: 2,
+                        
+                        gtk4::Image {
+                            set_icon_name: Some("folder-symbolic"),
+                        },
+                        gtk4::Image {
+                            set_icon_name: Some("list-add-symbolic"),
+                        }
+                    }
                 },
             },
             
