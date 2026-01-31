@@ -9,6 +9,7 @@ use gtk4::prelude::*;
 
 use relm4::prelude::*;
 use crate::components::entry_detail_view::{EntryDetailView, EntryDetailViewInput, EntryDetailViewOutput};
+use crate::components::common::create_primary_button;
 
 /// Minimum width for each column.
 const COLUMN_MIN_WIDTH: i32 = 250;
@@ -28,6 +29,8 @@ pub enum EntryBrowserInput {
     AddEntry,
     /// Set whether we are in trash mode (enables permanent deletion).
     SetTrashMode(bool),
+    /// Internal: User clicked a row.
+    EntryRowActivated(String),
     /// Message from the detail view sub-component.
     DetailViewMessage(EntryDetailViewOutput),
 }
@@ -106,6 +109,76 @@ impl Component for EntryBrowser {
                 gtk4::Box {
                     set_orientation: gtk4::Orientation::Horizontal,
                     set_vexpand: true,
+
+                     // Entry list column (always visible)
+                    gtk4::Box {
+                        set_orientation: gtk4::Orientation::Vertical,
+                        set_width_request: COLUMN_MIN_WIDTH,
+                        set_vexpand: true,
+
+                        // Toolbar
+                        gtk4::Box {
+                            set_orientation: gtk4::Orientation::Horizontal,
+                            set_spacing: 4,
+                            set_margin_all: 8,
+                            
+                            append = &create_primary_button("New Entry", "dialog-password-symbolic") {
+                                connect_clicked => EntryBrowserInput::AddEntry,
+                            }
+                        },
+
+                        gtk4::Separator {
+                            set_orientation: gtk4::Orientation::Horizontal,
+                        },
+
+                        // Entry list
+                        gtk4::ScrolledWindow {
+                            set_vexpand: true,
+                            set_hscrollbar_policy: gtk4::PolicyType::Never,
+
+                            #[name = "_entry_list_box"]
+                            gtk4::ListBox {
+                                add_css_class: "navigation-sidebar",
+                                set_selection_mode: gtk4::SelectionMode::Single,
+                                set_margin_all: 8,
+                                
+                                connect_row_activated[sender] => move |_, row| {
+                                    if let Some(name) = row.widget_name().as_str().strip_prefix("entry-") {
+                                         // Send just the UUID, logic handles the rest
+                                         // We can't send the full entry here easily without looking it up again or storing it
+                                         // But we can store entries in the model
+                                         // We need to look it up in model.current_entries
+                                         // But we can't access model here directly.
+                                         // We pass UUID and let update look via UUID.
+                                         // Problem: `SelectEntry` expects `Entry`.
+                                         // We should change `SelectEntry` or lookup in `update`.
+                                         // For now, let's keep `SelectEntry` requiring input
+                                         // We need a custom message `SelectEntryByUuid(String)`.
+                                         // Or we iterate current_entries in update.
+                                         // Let's modify Input to accept UUID lookup.
+                                         // BUT `update_with_view` has access to `model`.
+                                         
+                                         // Actually, we can just send a new message `InternalSelectEntry(String)`
+                                         // or change `SelectEntry` to `SelectEntry { uuid, entry: Option<Entry> }`?
+                                         // Ideally we keep it clean.
+                                         // Let's defer to a helper passing just UUID? 
+                                         // No, existing code expects `Entry`.
+                                         // We can't easily pass Entry from closure.
+                                         // We will use a new Input: `EntrySelected(String)`
+                                        sender.input(EntryBrowserInput::EntryRowActivated(name.to_string()));
+                                    }
+                                }
+                            }
+                        }
+                    },
+
+                    // Divider
+                    gtk4::Separator {
+                        set_orientation: gtk4::Orientation::Vertical,
+                    },
+
+                    // Detail view
+                    model.detail_view.widget() {},
                 }
             }
         }
@@ -131,6 +204,10 @@ impl Component for EntryBrowser {
         };
 
         let widgets = view_output!();
+        
+        // Initial state
+        model.refresh_breadcrumbs(&widgets, &sender);
+        model.refresh_list(&widgets, &sender);
 
         ComponentParts { model, widgets }
     }
@@ -153,14 +230,24 @@ impl Component for EntryBrowser {
                 self.current_entries = group.entries.clone();
                 self.selected_entry = None;
                 self.trash_mode = false;
-                self.rebuild_columns(widgets, &sender);
+                
+                self.refresh_breadcrumbs(widgets, &sender);
+                self.refresh_list(widgets, &sender);
+                self.detail_view.emit(EntryDetailViewInput::UpdateEntry(None));
             }
             EntryBrowserInput::SelectEntry { uuid, entry } => {
                 // Add entry to navigation
                 self.nav_path.push_entry(uuid, entry.title.clone());
                 self.selected_entry = Some(entry.clone());
                 self.detail_view.emit(EntryDetailViewInput::UpdateEntry(Some(entry)));
-                self.rebuild_columns(widgets, &sender);
+                
+                self.refresh_breadcrumbs(widgets, &sender);
+                self.update_selection(widgets);
+            }
+            EntryBrowserInput::EntryRowActivated(uuid) => {
+                 if let Some(entry) = self.current_entries.iter().find(|e| e.uuid == uuid).cloned() {
+                     sender.input(EntryBrowserInput::SelectEntry { uuid, entry });
+                 }
             }
             EntryBrowserInput::NavigateToDepth(depth) => {
                 self.nav_path.truncate(depth);
@@ -170,11 +257,21 @@ impl Component for EntryBrowser {
                 } else {
                     // Check if last step is an entry - if so, clear selected_entry
                     if let Some(NavigationStep::Group { .. }) = self.nav_path.steps.last() {
-                        self.selected_entry = None;
+                         // We are navigating back to a group view, but `current_entries` is still valid?
+                         // If we navigated deeper, `current_entries` might need update?
+                         // Actually `NavigateToDepth` assumes we are just popping breadcrumbs.
+                         // But usually we need to restore the entries of that level if we navigated into an entry?
+                         // In current logic:
+                         // - SelectGroup sets `current_entries`.
+                         // - SelectEntry appends to path but keeps `current_entries` (since we show list side-by-side).
+                         // - So popping an entry from path just deselects it.
+                         self.selected_entry = None;
+                         self.detail_view.emit(EntryDetailViewInput::UpdateEntry(None));
                     }
                 }
-                // self.password_visible = false; // Removed
-                self.rebuild_columns(widgets, &sender);
+                
+                self.refresh_breadcrumbs(widgets, &sender);
+                self.update_selection(widgets);
             }
 
             EntryBrowserInput::AddEntry => {
@@ -185,7 +282,8 @@ impl Component for EntryBrowser {
             EntryBrowserInput::SetTrashMode(is_trash) => {
                 self.trash_mode = is_trash;
                 self.detail_view.emit(EntryDetailViewInput::SetTrashMode(is_trash));
-                self.rebuild_columns(widgets, &sender);
+                // No need to rebuild, just detail view update?
+                // Actually if list shows trash status? No.
             }
 
 
@@ -225,13 +323,7 @@ impl Component for EntryBrowser {
 }
 
 impl EntryBrowser {
-    /// Rebuild all columns based on current navigation state.
-    fn rebuild_columns(&self, widgets: &mut <Self as Component>::Widgets, sender: &ComponentSender<Self>) {
-        // Clear existing columns
-        while let Some(child) = widgets._columns_box.first_child() {
-            widgets._columns_box.remove(&child);
-        }
-
+    fn refresh_breadcrumbs(&self, widgets: &EntryBrowserWidgets, sender: &ComponentSender<Self>) {
         // Clear and rebuild breadcrumbs
         while let Some(child) = widgets.breadcrumb_bar.first_child() {
             widgets.breadcrumb_bar.remove(&child);
@@ -259,50 +351,15 @@ impl EntryBrowser {
             });
             widgets.breadcrumb_bar.append(&btn);
         }
-
-        // Build entry list column (always visible to allow adding entries)
-        let column = self.build_entry_list_column(sender);
-        widgets._columns_box.append(&column);
-
-        // Always show divider
-        let sep = gtk4::Separator::new(gtk4::Orientation::Vertical);
-        widgets._columns_box.append(&sep);
-
-        // Build entry detail column (managed by sub-component)
-        widgets._columns_box.append(self.detail_view.widget());
     }
 
-    /// Build the entry list column.
-    fn build_entry_list_column(&self, sender: &ComponentSender<Self>) -> gtk4::Box {
-        let column = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-        column.set_width_request(COLUMN_MIN_WIDTH);
-        column.set_vexpand(true);
+    fn refresh_list(&self, widgets: &EntryBrowserWidgets, _sender: &ComponentSender<Self>) {
+        // Clear list
+        while let Some(child) = widgets._entry_list_box.first_child() {
+            widgets._entry_list_box.remove(&child);
+        }
 
-        // Toolbar
-        let toolbar = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
-        toolbar.set_margin_all(8);
-
-        let add_btn = crate::components::common::create_composite_add_button("Add Entry", "dialog-password-symbolic");
-
-        let sender_clone = sender.clone();
-        add_btn.connect_clicked(move |_| {
-            sender_clone.input(EntryBrowserInput::AddEntry);
-        });
-        toolbar.append(&add_btn);
-
-        column.append(&toolbar);
-        column.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
-
-        // Entry list
-        let scrolled = gtk4::ScrolledWindow::new();
-        scrolled.set_vexpand(true);
-        scrolled.set_hscrollbar_policy(gtk4::PolicyType::Never);
-
-        let list_box = gtk4::ListBox::new();
-        list_box.add_css_class("navigation-sidebar");
-        list_box.set_selection_mode(gtk4::SelectionMode::Single);
-        list_box.set_margin_all(8);
-
+        // Rebuild rows
         for entry in &self.current_entries {
             let row = gtk4::ListBoxRow::new();
             row.set_widget_name(&format!("entry-{}", entry.uuid));
@@ -331,44 +388,49 @@ impl EntryBrowser {
 
             hbox.append(&vbox);
 
-            // Chevron to indicate selection
+            // Chevron (maybe only if selected? or always?)
+            // Original code likely had it always or handled visibility
             let chevron = gtk4::Image::from_icon_name("go-next-symbolic");
             chevron.add_css_class("dim-label");
+            // Set invisible by default, only visible if selected?
+            // Actually GTK selection highlighting is usually enough usually.
+            // But let's keep it if that matches design.
+            // Wait, previous code added it unconditionally.
             hbox.append(&chevron);
 
             row.set_child(Some(&hbox));
-            list_box.append(&row);
-
-            // Select if it matches selected entry
-            if let Some(ref selected) = self.selected_entry {
-                if entry.uuid == selected.uuid {
-                    list_box.select_row(Some(&row));
-                    let row_clone = row.clone();
-                    gtk4::glib::idle_add_local(move || {
-                        row_clone.grab_focus();
-                        gtk4::glib::ControlFlow::Break
-                    });
-                }
-            }
+            widgets._entry_list_box.append(&row);
         }
-
-        // Connect row activation
-        let entries = self.current_entries.clone();
-        let sender_clone = sender.clone();
-        list_box.connect_row_activated(move |_, row| {
-            if let Some(name) = row.widget_name().as_str().strip_prefix("entry-") {
-                if let Some(entry) = entries.iter().find(|e| e.uuid == name) {
-                    sender_clone.input(EntryBrowserInput::SelectEntry {
-                        uuid: entry.uuid.clone(),
-                        entry: entry.clone(),
-                    });
-                }
-            }
-        });
-
-        scrolled.set_child(Some(&list_box));
-        column.append(&scrolled);
-
-        column
+        
+        self.update_selection(widgets);
     }
+
+    fn update_selection(&self, widgets: &EntryBrowserWidgets) {
+        if let Some(ref selected) = self.selected_entry {
+             // Find row by name
+             let mut i = 0;
+             while let Some(row) = widgets._entry_list_box.row_at_index(i) {
+                 if let Some(name) = row.widget_name().as_str().strip_prefix("entry-") {
+                     if name == selected.uuid {
+                         widgets._entry_list_box.select_row(Some(&row));
+                         
+                         // SCROLL TO VIEW / FOCUS
+                         // Use idle_add_local to ensure layout is updated before focusing
+                         // This is crucial for scrolling to work if the list was just rebuilt
+                         let row_clone = row.clone();
+                         gtk4::glib::idle_add_local(move || {
+                             row_clone.grab_focus();
+                             gtk4::glib::ControlFlow::Break
+                         });
+                         return;
+                     }
+                 }
+                 i += 1;
+             }
+        } else {
+            widgets._entry_list_box.select_row(None::<&gtk4::ListBoxRow>);
+        }
+    }
+
+
 }

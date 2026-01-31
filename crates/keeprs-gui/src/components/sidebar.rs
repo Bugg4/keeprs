@@ -3,6 +3,7 @@
 use keeprs_core::{Entry, Group};
 use gtk4::prelude::*;
 use relm4::prelude::*;
+use crate::components::common::create_primary_button;
 
 use std::collections::HashSet;
 use gtk4::cairo::Context;
@@ -87,22 +88,11 @@ impl Component for Sidebar {
                 set_spacing: 8,
                 set_margin_all: 8,
                 
-                gtk4::Button {
-                    set_tooltip_text: Some("New Folder"),
-                    set_halign: gtk4::Align::Start,
-                    connect_clicked => SidebarInput::AddGroup,
 
-                    gtk4::Box {
-                        set_orientation: gtk4::Orientation::Horizontal,
-                        set_spacing: 2,
-                        
-                        gtk4::Image {
-                            set_icon_name: Some("folder-symbolic"),
-                        },
-                        gtk4::Image {
-                            set_icon_name: Some("list-add-symbolic"),
-                        }
-                    }
+                append = &create_primary_button("New Folder", "folder-symbolic") {
+                    set_halign: gtk4::Align::Start,
+                    set_tooltip_text: Some("New Folder"),
+                    connect_clicked => SidebarInput::AddGroup,
                 },
             },
             

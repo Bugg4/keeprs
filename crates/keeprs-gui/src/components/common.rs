@@ -1,27 +1,32 @@
 use gtk4::prelude::*;
 
-/// Create a standardized "Add" button with a composite icon.
+
+/// Create a standardized "Primary" action button (e.g. Add).
 /// 
-/// The button will NOT have the "flat" class, ensuring a standard button background/border.
-/// It contains a horizontal box with the primary icon + a "plus" symbol.
-pub fn create_composite_add_button(tooltip: &str, primary_icon_name: &str) -> gtk4::Button {
+/// Returns a button with the "suggested-action" class, the given label, and icon.
+pub fn create_primary_button(label: &str, primary_icon_name: &str) -> gtk4::Button {
     let btn = gtk4::Button::new();
-    btn.set_tooltip_text(Some(tooltip));
+    btn.add_css_class("suggested-action");
     
-    // Create composite icon content
-    let box_layout = gtk4::Box::new(gtk4::Orientation::Horizontal, 2);
+    let box_layout = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+    box_layout.set_halign(gtk4::Align::Center);
     
+    // Primary Icon
     let icon1 = gtk4::Image::from_icon_name(primary_icon_name);
     box_layout.append(&icon1);
     
-    let icon2 = gtk4::Image::from_icon_name("list-add-symbolic");
-    box_layout.append(&icon2);
+    // Plus Icon
+    // let icon2 = gtk4::Image::from_icon_name("list-add-symbolic");
+    // box_layout.append(&icon2);
+    
+    // Label
+    let label_widget = gtk4::Label::new(Some(label));
+    box_layout.append(&label_widget);
     
     btn.set_child(Some(&box_layout));
     
     btn
 }
-
 /// Create a standardized "Label + Text Entry" row.
 /// Returns the container Box and the Entry widget (so signals can be connected).
 pub fn create_text_entry_row(label: &str, value: &str) -> (gtk4::Box, gtk4::Entry) {
