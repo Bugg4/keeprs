@@ -101,7 +101,6 @@ impl Component for PasswordConfirmation {
 
                         #[name = "_password_entry"]
                         gtk4::PasswordEntry {
-                            set_placeholder_text: Some("Enter master password"),
                             set_show_peek_icon: true,
                             
                             connect_changed[sender] => move |entry| {
@@ -169,7 +168,13 @@ impl Component for PasswordConfirmation {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
+    fn update_with_view(
+        &mut self,
+        widgets: &mut Self::Widgets,
+        message: Self::Input,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
         match message {
             PasswordConfirmationInput::Show { message, action_id } => {
                 self.message = message;
@@ -178,6 +183,9 @@ impl Component for PasswordConfirmation {
                 self.error = None;
                 self.visible = true;
                 self.processing = false;
+                
+                // Manually clear the widget to avoid recursive signal loops with #[watch]
+                widgets._password_entry.set_text("");
             }
             PasswordConfirmationInput::PasswordChanged(pwd) => {
                 self.password = pwd;
@@ -196,15 +204,16 @@ impl Component for PasswordConfirmation {
             PasswordConfirmationInput::Cancel => {
                 self.visible = false;
                 self.password.clear();
+                // Manually clear widget
+                widgets._password_entry.set_text("");
                 let _ = sender.output(PasswordConfirmationOutput::Cancelled);
             }
             PasswordConfirmationInput::ShowError(err) => {
                 self.error = Some(err);
                 self.processing = false;
-                self.password.clear(); // Security: clear password on error? Or keep it? kept usually for checking typos.
-                // But if clear, user has to retype. "Keeprs" unlock dialog keeps it usually?
-                // Let's keep it but user might have typed wrong.
+                // keep the password for retry
             }
         }
+        self.update_view(widgets, sender);
     }
 }

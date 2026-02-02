@@ -505,19 +505,19 @@ impl Component for App {
                 if let Some(ref root) = self.root_group {
                     if let Some(group) = find_group_by_uuid(root, &uuid) {
                         // Check if in recycle bin
-                        let in_trash = if let Some(ref db) = self.database {
+                        let in_trash = group.is_recycle_bin || if let Some(ref db) = self.database {
                              if let Ok(db) = db.read() {
                                  db.is_inside_recycle_bin(&group.uuid)
                              } else { false }
                         } else { false };
-
-                        self.entry_browser.emit(EntryBrowserInput::SetTrashMode(in_trash));
 
                         self.entry_browser.emit(EntryBrowserInput::SelectGroup {
                             uuid: uuid.clone(),
                             name: group.name.clone(),
                             group: group.clone(),
                         });
+
+                        self.entry_browser.emit(EntryBrowserInput::SetTrashMode(in_trash));
 
                         #[cfg(debug_assertions)]
                         {
@@ -546,19 +546,19 @@ impl Component for App {
                 if let Some(ref root) = self.root_group {
                     if let Some(group) = find_group_by_uuid(root, &group_uuid) {
                         // Check if in recycle bin
-                        let in_trash = if let Some(ref db) = self.database {
+                        let in_trash = group.is_recycle_bin || if let Some(ref db) = self.database {
                              if let Ok(db) = db.read() {
                                  db.is_inside_recycle_bin(&group.uuid)
                              } else { false }
                         } else { false };
-
-                        self.entry_browser.emit(EntryBrowserInput::SetTrashMode(in_trash));
 
                         self.entry_browser.emit(EntryBrowserInput::SelectGroup {
                             uuid: group_uuid.clone(),
                             name: group.name.clone(),
                             group: group.clone(),
                         });
+                        
+                        self.entry_browser.emit(EntryBrowserInput::SetTrashMode(in_trash));
                         // Then select the entry
                         self.entry_browser.emit(EntryBrowserInput::SelectEntry {
                             uuid: entry.uuid.clone(),
