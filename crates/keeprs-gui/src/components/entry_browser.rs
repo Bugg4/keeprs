@@ -44,6 +44,8 @@ pub enum EntryBrowserOutput {
     DeleteEntry(String),
     /// User wants to permanently delete an entry.
     RequestPermanentDeleteEntry(String),
+    /// Request to restore an entry.
+    RestoreEntry(String),
     /// User wants to save an attachment.
     SaveAttachment { filename: String, data: Vec<u8> },
     /// User wants to open an attachment.
@@ -304,7 +306,10 @@ impl Component for EntryBrowser {
                             }
                         });
                     }
-                    EntryDetailViewOutput::SaveAttachment { filename, data } => {
+                    EntryDetailViewOutput::RestoreEntry(uuid) => {
+                let _ = sender.output(EntryBrowserOutput::RestoreEntry(uuid));
+            }
+            EntryDetailViewOutput::SaveAttachment { filename, data } => {
                          let _ = sender.output(EntryBrowserOutput::SaveAttachment { filename, data });
                     }
                     EntryDetailViewOutput::OpenAttachment { filename, data } => {

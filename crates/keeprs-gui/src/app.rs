@@ -84,8 +84,10 @@ pub enum AppInput {
     VerifyPermanentDeleteEntry(String),
     /// Request to permanently delete a group (shows confirmation).
     VerifyPermanentDeleteGroup(String),
-    /// Password confirmed provided for permanent action.
+    /// Confirmed permanent deletion
     PermanentDeleteConfirmed { password: String, action_id: String },
+    /// Restore entry
+    RestoreEntry(String),
     /// Entry saved from edit dialog.
     EntrySaved(Entry),
     /// Group saved from edit dialog.
@@ -253,6 +255,7 @@ impl Component for App {
                 EntryBrowserOutput::SaveAttachment { filename, data } => AppInput::SaveAttachment { filename, data },
                 EntryBrowserOutput::OpenAttachment { filename, data } => AppInput::OpenAttachment { filename, data },
                 EntryBrowserOutput::RequestPermanentDeleteEntry(uuid) => AppInput::VerifyPermanentDeleteEntry(uuid),
+                EntryBrowserOutput::RestoreEntry(uuid) => AppInput::RestoreEntry(uuid),
             });
 
         let entry_edit = EntryEdit::builder()
@@ -501,7 +504,6 @@ impl Component for App {
                 self.current_group_uuid = Some(uuid.clone());
 
                 // Find the group and show its entries in entry browser
-                // Find the group and show its entries in entry browser
                 if let Some(ref root) = self.root_group {
                     if let Some(group) = find_group_by_uuid(root, &uuid) {
                         // Check if in recycle bin
@@ -662,10 +664,49 @@ impl Component for App {
                  });
             }
             AppInput::VerifyPermanentDeleteEntry(uuid) => {
-                  self.password_confirmation.emit(PasswordConfirmationInput::Show {
-                     message: "This will permanently delete this entry. This action cannot be undone.".to_string(),
-                     action_id: format!("delete_entry_perm:{}", uuid),
-                 });
+                self.password_confirmation.emit(PasswordConfirmationInput::Show {
+                    message: "This will permanently delete this entry. This action cannot be undone.".to_string(),
+                    action_id: format!("delete_entry_perm:{}", uuid),
+                });
+            }
+            AppInput::RestoreEntry(uuid) => {
+                 tracing::info!("Restore entry: {}", uuid);
+                 if let Some(ref db) = self.database {
+                     if let Ok(mut db) = db.write() {
+                         if let Err(e) = db.restore_entry(&uuid) {
+                              tracing::error!("Failed to restore entry: {}", e);
+                              // TODO: Show error
+                         } else {
+                              tracing::info!("Entry restored");
+                              // Refresh
+                              let root = db.root_group().clone();
+                              self.root_group = Some(root.clone());
+                              self.unsaved_changes = true;
+                              self.info_bar.emit(InfoBarInput::SetUnsavedChanges(true));
+                              
+                              self.sidebar.emit(SidebarInput::SetRootGroup(root.clone()));
+                              self.search_palette.emit(SearchPaletteInput::SetRootGroup(root.clone()));
+                              
+                              // Select the recycle bin again to refresh list
+                              if let Some(bin_uuid) = db.get_recycle_bin_uuid() {
+                                   if let Some(group) = find_group_by_uuid(&root, &bin_uuid) {
+                                       if let Some(current_uuid) = &self.current_group_uuid {
+                                            if let Some(current_group) = find_group_by_uuid(&root, current_uuid) {
+                                                self.entry_browser.emit(EntryBrowserInput::SelectGroup { 
+                                                    uuid: current_uuid.clone(),
+                                                    name: current_group.name.clone(),
+                                                    group: current_group.clone()
+                                                });
+                                                
+                                                let in_trash = db.is_inside_recycle_bin(current_uuid);
+                                                self.entry_browser.emit(EntryBrowserInput::SetTrashMode(in_trash));
+                                            }
+                                       }
+                                   }
+                              }
+                         }
+                     }
+                 }
             }
             AppInput::PermanentDeleteConfirmed { password, action_id } => {
                 // Verify password matches DB

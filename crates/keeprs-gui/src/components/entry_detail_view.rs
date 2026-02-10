@@ -53,8 +53,10 @@ pub enum EntryDetailViewOutput {
     EntryEdited(Entry),
     /// Request deletion of an entry.
     DeleteEntry(String),
-    /// Request permanent deletion.
+    /// Delete the entry permanently.
     RequestPermanentDeleteEntry(String),
+    /// Restore entry from trash.
+    RestoreEntry(String),
     /// Save attachment.
     SaveAttachment { filename: String, data: Vec<u8> },
     /// Open attachment.
@@ -274,7 +276,7 @@ impl EntryDetailView {
             });
             toolbar.append(&cancel_btn);
         } else {
-             let edit_btn = gtk4::Button::from_icon_name("document-edit-symbolic");
+            let edit_btn = gtk4::Button::from_icon_name("document-edit-symbolic");
             edit_btn.add_css_class("flat");
             edit_btn.set_tooltip_text(Some("Edit Entry"));
             let sender_clone = sender.clone();
@@ -283,18 +285,39 @@ impl EntryDetailView {
             });
             toolbar.append(&edit_btn);
 
+            // Spacer
+            let spacer = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
+            spacer.set_hexpand(true);
+            toolbar.append(&spacer);
+
+            // Restore button
+            if self.trash_mode {
+                let restore_btn = gtk4::Button::from_icon_name("edit-undo-symbolic");
+                restore_btn.set_tooltip_text(Some("Restore Entry"));
+                restore_btn.add_css_class("suggested-action");
+                
+                let sender_clone = sender.clone();
+                let uuid = entry.uuid.to_string();
+                restore_btn.connect_clicked(move |_| {
+                    sender_clone.output(EntryDetailViewOutput::RestoreEntry(uuid.clone())).unwrap();
+                });
+                toolbar.append(&restore_btn);
+            }
+
+            // Delete / Permanent Delete
             let delete_btn = gtk4::Button::from_icon_name("user-trash-symbolic");
-            delete_btn.add_css_class("flat");
-             if self.trash_mode {
+            if self.trash_mode {
                  delete_btn.set_tooltip_text(Some("Delete Permanently"));
                  delete_btn.add_css_class("destructive-action");
             } else {
                  delete_btn.set_tooltip_text(Some("Delete Entry"));
+                 delete_btn.add_css_class("flat");
             }
-             let sender_clone = sender.clone();
-             let uuid = entry.uuid.to_string();
-             let trash_mode = self.trash_mode;
-             delete_btn.connect_clicked(move |_| {
+            
+            let sender_clone = sender.clone();
+            let uuid = entry.uuid.to_string();
+            let trash_mode = self.trash_mode;
+            delete_btn.connect_clicked(move |_| {
                 if trash_mode {
                     sender_clone.output(EntryDetailViewOutput::RequestPermanentDeleteEntry(uuid.clone())).unwrap();
                 } else {

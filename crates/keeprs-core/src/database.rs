@@ -366,10 +366,27 @@ impl KeepassDatabase {
         if recycle_bin_uuid == uuid {
             anyhow::bail!("Cannot delete the Recycle Bin itself");
         }
+        
+        // 1. Find parent first to track original location (for Entries only)
+        // Groups don't support custom fields easily so we skip tracking for them.
+        let mut parent_uuid = None;
+        if !is_group {
+            if let Some(parent) = Self::find_parent_of_node(&self.db.root, uuid) {
+                parent_uuid = Some(parent.uuid.to_string());
+            }
+        }
 
-        // Remove the node
-        if let Some(node) = Self::delete_node_recursive(&mut self.db.root, uuid, is_group) {
-             // Add to recycle bin
+        // 2. Remove the node
+        if let Some(mut node) = Self::delete_node_recursive(&mut self.db.root, uuid, is_group) {
+             // 3. Tag with original parent if it's an entry
+             if let Some(p_uuid) = parent_uuid {
+                 if let keepass::db::Node::Entry(ref mut e) = node {
+                     e.fields.insert("keeprs_original_parent_uuid".to_string(), 
+                         keepass::db::Value::Unprotected(p_uuid));
+                 }
+             }
+
+             // 4. Add to recycle bin
              if Self::add_node_recursive(&mut self.db.root, &recycle_bin_uuid, node) {
                  Ok(())
              } else {
@@ -379,6 +396,27 @@ impl KeepassDatabase {
         } else {
              anyhow::bail!("Node with UUID {} not found", uuid)
         }
+    }
+
+    fn find_parent_of_node<'a>(group: &'a keepass::db::Group, target_uuid: &str) -> Option<&'a keepass::db::Group> {
+        for node in &group.children {
+            match node {
+                keepass::db::Node::Group(g) => {
+                    if g.uuid.to_string() == target_uuid {
+                        return Some(group);
+                    }
+                    if let Some(found) = Self::find_parent_of_node(g, target_uuid) {
+                        return Some(found);
+                    }
+                }
+                keepass::db::Node::Entry(e) => {
+                    if e.uuid.to_string() == target_uuid {
+                        return Some(group);
+                    }
+                }
+            }
+        }
+        None
     }
 
     pub fn empty_recycle_bin(&mut self) -> Result<()> {
@@ -432,6 +470,47 @@ impl KeepassDatabase {
     }
 
 
+
+
+    pub fn restore_entry(&mut self, uuid: &str) -> Result<()> {
+        let recycle_bin_uuid = self.get_recycle_bin_uuid().context("Recycle Bin not found")?;
+        
+        // 1. Locate the entry to find original parent
+        let mut original_parent_uuid = None;
+        if let Some(entry) = self.find_entry(uuid) {
+            if let Some(p_uuid) = entry.custom_fields.get("keeprs_original_parent_uuid") {
+                 original_parent_uuid = Some(p_uuid.clone());
+            }
+        } else {
+             anyhow::bail!("Entry with UUID {} not found", uuid);
+        }
+
+        let target_parent_uuid = if let Some(p_uuid) = original_parent_uuid {
+             // Check if parent still exists
+             if Self::find_node_recursive_mut(&mut self.db.root, &p_uuid).is_some() {
+                 p_uuid
+             } else {
+                 self.db.root.uuid.to_string()
+             }
+        } else {
+             self.db.root.uuid.to_string()
+        };
+
+        // 2. Remove from bin and restore
+        if let Some(mut node) = Self::delete_node_recursive(&mut self.db.root, uuid, false) {
+             if let keepass::db::Node::Entry(ref mut e) = node {
+                 e.fields.remove("keeprs_original_parent_uuid");
+             }
+             
+             if Self::add_node_recursive(&mut self.db.root, &target_parent_uuid, node) {
+                 Ok(())
+             } else {
+                 anyhow::bail!("Failed to restore node to parent group {}", target_parent_uuid)
+             }
+        } else {
+             anyhow::bail!("Failed to remove node from its current location during restore")
+        }
+    }
 
     pub fn delete_entry(&mut self, uuid: &str) -> Result<()> {
         self.recycle_node(uuid, false)
