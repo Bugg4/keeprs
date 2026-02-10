@@ -27,6 +27,40 @@ pub fn create_primary_button(label: &str, primary_icon_name: &str) -> gtk4::Butt
     
     btn
 }
+
+/// Create a standardized "Primary" action button with a composite icon.
+pub fn create_composite_button(
+    label: &str, 
+    base_icon: &str, 
+    specifier_icon: &str,
+    corner: crate::widgets::composite_icon::CompositeIconCorner,
+    x_offset: i32,
+    y_offset: i32
+) -> gtk4::Button {
+    let btn = gtk4::Button::new();
+    btn.add_css_class("suggested-action");
+    
+    let box_layout = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+    box_layout.set_halign(gtk4::Align::Center);
+    
+    // Composite Icon
+    let icon = crate::widgets::composite_icon::CompositeIcon::new(
+        base_icon,
+        specifier_icon,
+        corner,
+        x_offset,
+        y_offset
+    );
+    box_layout.append(&icon);
+    
+    // Label
+    let label_widget = gtk4::Label::new(Some(label));
+    box_layout.append(&label_widget);
+    
+    btn.set_child(Some(&box_layout));
+    
+    btn
+}
 /// Create a standardized "Label + Text Entry" row.
 /// Returns the container Box and the Entry widget (so signals can be connected).
 pub fn create_text_entry_row(label: &str, value: &str) -> (gtk4::Box, gtk4::Entry) {

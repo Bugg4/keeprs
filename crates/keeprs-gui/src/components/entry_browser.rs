@@ -9,7 +9,7 @@ use gtk4::prelude::*;
 
 use relm4::prelude::*;
 use crate::components::entry_detail_view::{EntryDetailView, EntryDetailViewInput, EntryDetailViewOutput};
-use crate::components::common::create_primary_button;
+use crate::components::common::create_composite_button;
 
 /// Minimum width for each column.
 const COLUMN_MIN_WIDTH: i32 = 250;
@@ -124,7 +124,14 @@ impl Component for EntryBrowser {
                             set_spacing: 4,
                             set_margin_all: 8,
                             
-                            append = &create_primary_button("New Entry", "dialog-password-symbolic") {
+                            append = &create_composite_button(
+                                "New Entry", 
+                                "dialog-password-symbolic", // key icon
+                                "list-add-symbolic", 
+                                crate::widgets::composite_icon::CompositeIconCorner::TopRight,
+                                3,
+                                3 
+                            ) {
                                 connect_clicked => EntryBrowserInput::AddEntry,
                             }
                         },

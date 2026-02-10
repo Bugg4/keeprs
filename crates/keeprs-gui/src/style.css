@@ -90,3 +90,29 @@ label.error {
     /* background: @unfocused_borders; */ 
     padding: 2px;
 }
+
+/* Composite Icon Specifier Halo - Outline Style */
+.composite-icon-specifier-wrapper {
+    background-color: transparent;
+    border-radius: 0;
+    padding: 0;
+    
+    /* Simulate 2px stroke using multiple drop shadows */
+    -gtk-icon-shadow: 
+        0 1px 0 @window_bg_color, 0 -1px 0 @window_bg_color, 1px 0 0 @window_bg_color, -1px 0 0 @window_bg_color,
+        /* Diagonals */
+        1px 1px 0 @window_bg_color, -1px -1px 0 @window_bg_color, 1px -1px 0 @window_bg_color, -1px 1px 0 @window_bg_color,
+        /* 2px offsets */
+        0 2px 0 @window_bg_color, 0 -2px 0 @window_bg_color, 2px 0 0 @window_bg_color, -2px 0 0 @window_bg_color;
+}
+
+/* Button specific coloring */
+button.suggested-action .composite-icon-specifier-wrapper {
+   -gtk-icon-shadow: 
+        0 1px 0 @accent_bg_color, 0 -1px 0 @accent_bg_color, 1px 0 0 @accent_bg_color, -1px 0 0 @accent_bg_color,
+        /* Diagonals */
+        1px 1px 0 @accent_bg_color, -1px -1px 0 @accent_bg_color, 1px -1px 0 @accent_bg_color, -1px 1px 0 @accent_bg_color,
+        /* 2px offsets */
+        0 2px 0 @accent_bg_color, 0 -2px 0 @accent_bg_color, 2px 0 0 @accent_bg_color, -2px 0 0 @accent_bg_color;
+   color: @accent_fg_color;
+}

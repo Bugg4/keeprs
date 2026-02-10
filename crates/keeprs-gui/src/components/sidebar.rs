@@ -1,12 +1,12 @@
 //! Sidebar component with folder tree.
 
-use keeprs_core::{Entry, Group};
+use crate::components::common::create_composite_button;
 use gtk4::prelude::*;
+use keeprs_core::{Entry, Group};
 use relm4::prelude::*;
-use crate::components::common::create_primary_button;
 
-use std::collections::HashSet;
 use gtk4::cairo::Context;
+use std::collections::HashSet;
 
 /// Messages for the sidebar.
 #[derive(Debug)]
@@ -81,21 +81,25 @@ impl Component for Sidebar {
         gtk4::Box {
             set_orientation: gtk4::Orientation::Vertical,
             set_spacing: 0,
-            
+
             // Header
             gtk4::Box {
                 set_orientation: gtk4::Orientation::Horizontal,
                 set_spacing: 8,
                 set_margin_all: 8,
-                
 
-                append = &create_primary_button("New Folder", "folder-symbolic") {
-                    set_halign: gtk4::Align::Start,
-                    set_tooltip_text: Some("New Folder"),
-                    connect_clicked => SidebarInput::AddGroup,
-                },
+                  append = &create_composite_button(
+                                "New Group",
+                                "folder-symbolic",
+                                "list-add-symbolic",
+                                crate::widgets::composite_icon::CompositeIconCorner::TopRight,
+                                3,
+                                3
+                            ) {
+                                connect_clicked => SidebarInput::AddGroup,
+                            }
             },
-            
+
             gtk4::Separator {
                 set_orientation: gtk4::Orientation::Horizontal,
             },
@@ -127,14 +131,17 @@ impl Component for Sidebar {
         }
     }
 
-
     fn init(
         init: Self::Init,
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        tracing::info!("Sidebar::init received initial_width: {}, min_width: {}", init.initial_width, init.min_width);
-        
+        tracing::info!(
+            "Sidebar::init received initial_width: {}, min_width: {}",
+            init.initial_width,
+            init.min_width
+        );
+
         let context_menu = gtk4::PopoverMenu::from_model(None::<&gtk4::gio::MenuModel>);
         context_menu.set_has_arrow(true);
         context_menu.set_position(gtk4::PositionType::Bottom);
@@ -150,8 +157,6 @@ impl Component for Sidebar {
         let widgets = view_output!();
 
         ComponentParts { model, widgets }
-
-
     }
 
     fn update_with_view(
@@ -167,12 +172,12 @@ impl Component for Sidebar {
                 // Do NOT clear expanded_uuids here. We want to preserve state.
                 // If new groups appear, they will be collapsed by default.
                 // If old groups disappear, they remain in the set but won't be rendered (no harm).
-                
+
                 // Ensure root is expanded if it wasn't?
-                 if let Some(root) = &self.root_group {
+                if let Some(root) = &self.root_group {
                     self.expanded_uuids.insert(root.uuid.clone());
                 }
-                
+
                 self.rebuild_list(widgets, sender);
             }
             SidebarInput::SelectGroup(uuid) => {
@@ -185,13 +190,13 @@ impl Component for Sidebar {
             }
             SidebarInput::UpdateSelection(uuid) => {
                 self.selected_uuid = Some(uuid.clone());
-                
+
                 // Auto-expand parents
                 if let Some(root) = &self.root_group {
                     let mut path = Vec::new();
                     if Sidebar::find_path_recursive(root, &uuid, &mut path) {
                         for p in path {
-                             self.expanded_uuids.insert(p);
+                            self.expanded_uuids.insert(p);
                         }
                         self.rebuild_list(widgets, sender);
                     }
@@ -230,7 +235,11 @@ impl Component for Sidebar {
 }
 
 impl Sidebar {
-    fn rebuild_list(&self, widgets: &mut <Sidebar as Component>::Widgets, sender: ComponentSender<Sidebar>) {
+    fn rebuild_list(
+        &self,
+        widgets: &mut <Sidebar as Component>::Widgets,
+        sender: ComponentSender<Sidebar>,
+    ) {
         // Ensure context menu is not parented to any row that is about to be destroyed
         self.context_menu.unparent();
 
@@ -240,13 +249,18 @@ impl Sidebar {
 
         if let Some(root) = &self.root_group {
             let count = root.children.len() + root.entries.len();
-            tracing::info!("Sidebar::rebuild_list root found. Children: {}, Entries: {}, Total: {}", root.children.len(), root.entries.len(), count);
+            tracing::info!(
+                "Sidebar::rebuild_list root found. Children: {}, Entries: {}, Total: {}",
+                root.children.len(),
+                root.entries.len(),
+                count
+            );
             let mut levels = Vec::new();
             // Root itself is usually hidden in 2-pane abstract, but here we render children of root.
-            // Wait, standard sidebar hides the root folder if it's just a container. 
+            // Wait, standard sidebar hides the root folder if it's just a container.
             // Previous implementation rendered children of root.
             // We need to iterate over BOTH children and entries of root.
-            
+
             let total_count = root.children.len() + root.entries.len();
             let mut current_idx = 0;
 
@@ -254,13 +268,29 @@ impl Sidebar {
                 let is_last = current_idx == total_count - 1;
                 // Root children not under recycle bin unless root IS recycle bin? (Unlikely for root)
                 let is_under_bin = root.is_recycle_bin;
-                self.add_group_node(&widgets._list_box, child, &mut levels, is_last, &sender, is_under_bin, &self.context_menu);
+                self.add_group_node(
+                    &widgets._list_box,
+                    child,
+                    &mut levels,
+                    is_last,
+                    &sender,
+                    is_under_bin,
+                    &self.context_menu,
+                );
                 current_idx += 1;
             }
             for entry in &root.entries {
                 let is_last = current_idx == total_count - 1;
                 let is_under_bin = root.is_recycle_bin;
-                self.add_entry_node(&widgets._list_box, entry, &mut levels, is_last, &sender, is_under_bin, &self.context_menu);
+                self.add_entry_node(
+                    &widgets._list_box,
+                    entry,
+                    &mut levels,
+                    is_last,
+                    &sender,
+                    is_under_bin,
+                    &self.context_menu,
+                );
                 current_idx += 1;
             }
         }
@@ -271,35 +301,35 @@ impl Sidebar {
     }
 
     fn select_row_by_uuid(&self, list_box: &gtk4::ListBox, uuid: &str) {
-         let group_name = format!("group-{}", uuid);
-         let entry_name = format!("entry-{}", uuid);
-         
-         let mut child = list_box.first_child();
-         while let Some(widget) = child {
-             if let Some(row) = widget.downcast_ref::<gtk4::ListBoxRow>() {
-                 let name = row.widget_name();
-                 if name == group_name || name == entry_name {
-                     list_box.select_row(Some(row));
-                     row.grab_focus();
-                     return;
-                 }
-             }
-             child = widget.next_sibling();
-         }
+        let group_name = format!("group-{}", uuid);
+        let entry_name = format!("entry-{}", uuid);
+
+        let mut child = list_box.first_child();
+        while let Some(widget) = child {
+            if let Some(row) = widget.downcast_ref::<gtk4::ListBoxRow>() {
+                let name = row.widget_name();
+                if name == group_name || name == entry_name {
+                    list_box.select_row(Some(row));
+                    row.grab_focus();
+                    return;
+                }
+            }
+            child = widget.next_sibling();
+        }
     }
 
     fn find_path_recursive(group: &Group, target_uuid: &str, path: &mut Vec<String>) -> bool {
         if group.uuid == *target_uuid {
             return true;
         }
-        
+
         // check entries
         for entry in &group.entries {
             if entry.uuid == target_uuid {
                 return true;
             }
         }
-        
+
         path.push(group.uuid.clone());
         for child in &group.children {
             if Self::find_path_recursive(child, target_uuid, path) {
@@ -307,7 +337,7 @@ impl Sidebar {
             }
         }
         path.pop();
-        
+
         false
     }
 
@@ -330,46 +360,46 @@ impl Sidebar {
         row.add_css_class("sidebar-row");
 
         let hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-        
+
         // Lines
         let depth = levels.len();
-        let indent_width = (depth + 1) * 24; 
-        
+        let indent_width = (depth + 1) * 24;
+
         let drawing_area = gtk4::DrawingArea::new();
         drawing_area.set_content_width(indent_width as i32);
         drawing_area.set_content_height(32);
         drawing_area.set_vexpand(true);
-        
+
         let levels_clone = levels.clone();
         let is_last_clone = is_last;
-        
+
         drawing_area.set_draw_func(move |_area, cr: &Context, _width, height| {
-             cr.set_source_rgba(0.6, 0.6, 0.6, 0.5);
-             cr.set_line_width(1.0);
-             let indent = 24.0;
-             let half_indent = 12.0;
+            cr.set_source_rgba(0.6, 0.6, 0.6, 0.5);
+            cr.set_line_width(1.0);
+            let indent = 24.0;
+            let half_indent = 12.0;
 
-             for (i, &parent_is_last) in levels_clone.iter().enumerate() {
-                 if !parent_is_last {
-                     let x = i as f64 * indent + half_indent;
-                     cr.move_to(x, -2.0);
-                     cr.line_to(x, height as f64 + 2.0);
-                     cr.stroke().expect("Invalid cairo");
-                 }
-             }
+            for (i, &parent_is_last) in levels_clone.iter().enumerate() {
+                if !parent_is_last {
+                    let x = i as f64 * indent + half_indent;
+                    cr.move_to(x, -2.0);
+                    cr.line_to(x, height as f64 + 2.0);
+                    cr.stroke().expect("Invalid cairo");
+                }
+            }
 
-             let current_x = depth as f64 * indent + half_indent;
-             cr.move_to(current_x, -2.0);
-             if is_last_clone {
-                 cr.line_to(current_x, height as f64 / 2.0);
-             } else {
-                 cr.line_to(current_x, height as f64 + 2.0);
-             }
-             cr.stroke().expect("Invalid cairo");
+            let current_x = depth as f64 * indent + half_indent;
+            cr.move_to(current_x, -2.0);
+            if is_last_clone {
+                cr.line_to(current_x, height as f64 / 2.0);
+            } else {
+                cr.line_to(current_x, height as f64 + 2.0);
+            }
+            cr.stroke().expect("Invalid cairo");
 
-             cr.move_to(current_x, height as f64 / 2.0);
-             cr.line_to(current_x + half_indent + 4.0, height as f64 / 2.0);
-             cr.stroke().expect("Invalid cairo");
+            cr.move_to(current_x, height as f64 / 2.0);
+            cr.line_to(current_x + half_indent + 4.0, height as f64 / 2.0);
+            cr.stroke().expect("Invalid cairo");
         });
 
         hbox.append(&drawing_area);
@@ -397,7 +427,17 @@ impl Sidebar {
         let context_menu_clone = context_menu.clone();
         gesture.connect_released(move |gesture, _n_press, x, y| {
             if let Some(widget) = gesture.widget() {
-                Self::show_context_menu(&widget, x, y, &uuid_clone, false, &sender_clone, false, is_under_recycle_bin, &context_menu_clone);
+                Self::show_context_menu(
+                    &widget,
+                    x,
+                    y,
+                    &uuid_clone,
+                    false,
+                    &sender_clone,
+                    false,
+                    is_under_recycle_bin,
+                    &context_menu_clone,
+                );
             }
         });
         row.add_controller(gesture);
@@ -405,11 +445,7 @@ impl Sidebar {
         list_box.append(&row);
     }
 
-    fn add_placeholder_node(
-        &self,
-        list_box: &gtk4::ListBox,
-        levels: &[bool],
-    ) {
+    fn add_placeholder_node(&self, list_box: &gtk4::ListBox, levels: &[bool]) {
         let row = gtk4::ListBoxRow::new();
         row.set_activatable(false);
         row.set_selectable(false);
@@ -417,41 +453,41 @@ impl Sidebar {
         row.add_css_class("sidebar-placeholder");
 
         let hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-        
+
         let depth = levels.len();
-        let indent_width = (depth + 1) * 24; 
-        
+        let indent_width = (depth + 1) * 24;
+
         let drawing_area = gtk4::DrawingArea::new();
         drawing_area.set_content_width(indent_width as i32);
         drawing_area.set_content_height(32);
         drawing_area.set_vexpand(true);
-        
+
         let levels_clone = levels.to_vec();
-        
+
         drawing_area.set_draw_func(move |_area, cr: &Context, _width, height| {
-             cr.set_source_rgba(0.6, 0.6, 0.6, 0.5);
-             cr.set_line_width(1.0);
-             let indent = 24.0;
-             let half_indent = 12.0;
+            cr.set_source_rgba(0.6, 0.6, 0.6, 0.5);
+            cr.set_line_width(1.0);
+            let indent = 24.0;
+            let half_indent = 12.0;
 
-             for (i, &parent_is_last) in levels_clone.iter().enumerate() {
-                 if !parent_is_last {
-                     let x = i as f64 * indent + half_indent;
-                     cr.move_to(x, -2.0);
-                     cr.line_to(x, height as f64 + 2.0);
-                     cr.stroke().expect("Invalid cairo");
-                 }
-             }
+            for (i, &parent_is_last) in levels_clone.iter().enumerate() {
+                if !parent_is_last {
+                    let x = i as f64 * indent + half_indent;
+                    cr.move_to(x, -2.0);
+                    cr.line_to(x, height as f64 + 2.0);
+                    cr.stroke().expect("Invalid cairo");
+                }
+            }
 
-             // Last branch
-             let current_x = depth as f64 * indent + half_indent;
-             cr.move_to(current_x, -2.0);
-             cr.line_to(current_x, height as f64 / 2.0);
-             cr.stroke().expect("Invalid cairo");
+            // Last branch
+            let current_x = depth as f64 * indent + half_indent;
+            cr.move_to(current_x, -2.0);
+            cr.line_to(current_x, height as f64 / 2.0);
+            cr.stroke().expect("Invalid cairo");
 
-             cr.move_to(current_x, height as f64 / 2.0);
-             cr.line_to(current_x + half_indent + 4.0, height as f64 / 2.0);
-             cr.stroke().expect("Invalid cairo");
+            cr.move_to(current_x, height as f64 / 2.0);
+            cr.line_to(current_x + half_indent + 4.0, height as f64 / 2.0);
+            cr.stroke().expect("Invalid cairo");
         });
 
         hbox.append(&drawing_area);
@@ -487,50 +523,52 @@ impl Sidebar {
 
         let overlay = gtk4::Overlay::new();
         let hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
-        
+
         let depth = levels.len();
-        let indent_width = (depth + 1) * 24; 
-        
+        let indent_width = (depth + 1) * 24;
+
         let drawing_area = gtk4::DrawingArea::new();
         drawing_area.set_content_width(indent_width as i32);
         drawing_area.set_content_height(32);
         drawing_area.set_vexpand(true);
-        
+
         let levels_clone = levels.clone();
         let is_last_clone = is_last;
-        
+
         drawing_area.set_draw_func(move |_area, cr: &Context, _width, height| {
-             cr.set_source_rgba(0.6, 0.6, 0.6, 0.5);
-             cr.set_line_width(1.0);
-             let indent = 24.0;
-             let half_indent = 12.0;
+            cr.set_source_rgba(0.6, 0.6, 0.6, 0.5);
+            cr.set_line_width(1.0);
+            let indent = 24.0;
+            let half_indent = 12.0;
 
-             for (i, &parent_is_last) in levels_clone.iter().enumerate() {
-                 if !parent_is_last {
-                     let x = i as f64 * indent + half_indent;
-                     cr.move_to(x, -2.0);
-                     cr.line_to(x, height as f64 + 2.0);
-                     cr.stroke().expect("Invalid cairo");
-                 }
-             }
+            for (i, &parent_is_last) in levels_clone.iter().enumerate() {
+                if !parent_is_last {
+                    let x = i as f64 * indent + half_indent;
+                    cr.move_to(x, -2.0);
+                    cr.line_to(x, height as f64 + 2.0);
+                    cr.stroke().expect("Invalid cairo");
+                }
+            }
 
-             let current_x = depth as f64 * indent + half_indent;
-             cr.move_to(current_x, -2.0);
-             if is_last_clone {
-                 cr.line_to(current_x, height as f64 / 2.0);
-             } else {
-                 cr.line_to(current_x, height as f64 + 2.0);
-             }
-             cr.stroke().expect("Invalid cairo");
+            let current_x = depth as f64 * indent + half_indent;
+            cr.move_to(current_x, -2.0);
+            if is_last_clone {
+                cr.line_to(current_x, height as f64 / 2.0);
+            } else {
+                cr.line_to(current_x, height as f64 + 2.0);
+            }
+            cr.stroke().expect("Invalid cairo");
 
-             cr.move_to(current_x, height as f64 / 2.0);
-             cr.line_to(current_x + half_indent + 4.0, height as f64 / 2.0);
-             cr.stroke().expect("Invalid cairo");
+            cr.move_to(current_x, height as f64 / 2.0);
+            cr.line_to(current_x + half_indent + 4.0, height as f64 / 2.0);
+            cr.stroke().expect("Invalid cairo");
         });
 
         hbox.append(&drawing_area);
 
-        let icon_name = if self.expanded_uuids.contains(&group.uuid) && (!group.children.is_empty() || !group.entries.is_empty()) {
+        let icon_name = if self.expanded_uuids.contains(&group.uuid)
+            && (!group.children.is_empty() || !group.entries.is_empty())
+        {
             "folder-open-symbolic"
         } else if group.is_recycle_bin {
             "user-trash-symbolic"
@@ -552,42 +590,42 @@ impl Sidebar {
         // Let's show total count
         let count = group.entries.len();
         if count > 0 {
-             let badge = gtk4::Label::new(Some(&count.to_string()));
-             badge.add_css_class("dim-label");
-             badge.set_margin_end(8);
-             hbox.append(&badge);
+            let badge = gtk4::Label::new(Some(&count.to_string()));
+            badge.add_css_class("dim-label");
+            badge.set_margin_end(8);
+            hbox.append(&badge);
         }
 
         overlay.set_child(Some(&hbox));
 
         // Expander: Show always for groups (unless hidden logic applies, but here we show for all)
         // User requested expander even for empty groups
-        // But maybe not for Recycle Bin leaf if it shouldn't expand? 
+        // But maybe not for Recycle Bin leaf if it shouldn't expand?
         // User said: "Do show expader arrow for recycle bin leafs too"
         {
-             let expander_btn = gtk4::Button::new();
-             expander_btn.add_css_class("flat");
-             expander_btn.add_css_class("circular");
-             
-             let arrow_icon = if self.expanded_uuids.contains(&group.uuid) {
-                 "pan-down-symbolic"
-             } else {
-                 "pan-end-symbolic"
-             };
-             expander_btn.set_icon_name(arrow_icon);
-             expander_btn.set_halign(gtk4::Align::Start);
-             expander_btn.set_valign(gtk4::Align::Center);
-             expander_btn.set_margin_start((depth as i32) * 24);
-             expander_btn.set_width_request(24);
-             expander_btn.set_height_request(24);
+            let expander_btn = gtk4::Button::new();
+            expander_btn.add_css_class("flat");
+            expander_btn.add_css_class("circular");
 
-             let sender_clone = sender.clone();
-             let uuid_clone = group.uuid.clone();
-             expander_btn.connect_clicked(move |_| {
-                 sender_clone.input(SidebarInput::ToggleExpand(uuid_clone.clone()));
-             });
-             
-             overlay.add_overlay(&expander_btn);
+            let arrow_icon = if self.expanded_uuids.contains(&group.uuid) {
+                "pan-down-symbolic"
+            } else {
+                "pan-end-symbolic"
+            };
+            expander_btn.set_icon_name(arrow_icon);
+            expander_btn.set_halign(gtk4::Align::Start);
+            expander_btn.set_valign(gtk4::Align::Center);
+            expander_btn.set_margin_start((depth as i32) * 24);
+            expander_btn.set_width_request(24);
+            expander_btn.set_height_request(24);
+
+            let sender_clone = sender.clone();
+            let uuid_clone = group.uuid.clone();
+            expander_btn.connect_clicked(move |_| {
+                sender_clone.input(SidebarInput::ToggleExpand(uuid_clone.clone()));
+            });
+
+            overlay.add_overlay(&expander_btn);
         }
 
         row.set_child(Some(&overlay));
@@ -598,13 +636,23 @@ impl Sidebar {
         let sender_clone = sender.clone();
         let uuid_clone = group.uuid.clone();
         let is_recycle_bin = group.is_recycle_bin;
-        
+
         let in_bin_context = is_under_recycle_bin; // If we are under bin
         let context_menu_clone = context_menu.clone();
 
         gesture.connect_released(move |gesture, _n_press, x, y| {
             if let Some(widget) = gesture.widget() {
-                Self::show_context_menu(&widget, x, y, &uuid_clone, true, &sender_clone, is_recycle_bin, in_bin_context, &context_menu_clone);
+                Self::show_context_menu(
+                    &widget,
+                    x,
+                    y,
+                    &uuid_clone,
+                    true,
+                    &sender_clone,
+                    is_recycle_bin,
+                    in_bin_context,
+                    &context_menu_clone,
+                );
             }
         });
         row.add_controller(gesture);
@@ -614,23 +662,39 @@ impl Sidebar {
         if self.expanded_uuids.contains(&group.uuid) {
             levels.push(is_last);
             let total_child_count = group.children.len() + group.entries.len();
-            
+
             if total_child_count == 0 {
                 // Show placeholder
                 self.add_placeholder_node(list_box, levels);
             } else {
                 let mut current_child_idx = 0;
-                
+
                 let next_under_bin = is_under_recycle_bin || group.is_recycle_bin;
 
                 for child in &group.children {
                     let child_is_last = current_child_idx == total_child_count - 1;
-                    self.add_group_node(list_box, child, levels, child_is_last, sender, next_under_bin, context_menu);
+                    self.add_group_node(
+                        list_box,
+                        child,
+                        levels,
+                        child_is_last,
+                        sender,
+                        next_under_bin,
+                        context_menu,
+                    );
                     current_child_idx += 1;
                 }
                 for entry in &group.entries {
                     let child_is_last = current_child_idx == total_child_count - 1;
-                    self.add_entry_node(list_box, entry, levels, child_is_last, sender, next_under_bin, context_menu);
+                    self.add_entry_node(
+                        list_box,
+                        entry,
+                        levels,
+                        child_is_last,
+                        sender,
+                        next_under_bin,
+                        context_menu,
+                    );
                     current_child_idx += 1;
                 }
             }
@@ -651,37 +715,42 @@ impl Sidebar {
     ) {
         let menu_model = gtk4::gio::Menu::new();
         if is_recycle_bin {
-             menu_model.append(Some("Empty Recycle Bin"), Some("ctx.empty"));
+            menu_model.append(Some("Empty Recycle Bin"), Some("ctx.empty"));
         } else if is_under_recycle_bin {
-             menu_model.append(Some("Delete Permanently"), Some("ctx.delete_perm"));
+            menu_model.append(Some("Delete Permanently"), Some("ctx.delete_perm"));
         } else {
-             menu_model.append(Some("Delete"), Some("ctx.delete"));
+            menu_model.append(Some("Delete"), Some("ctx.delete"));
         }
 
         popover.set_menu_model(Some(&menu_model));
-        
+
         // Parent the popover to the clicked widget OR the listbox row.
-        // If we parent to the widget (e.g. overlay), coordinates are local. 
+        // If we parent to the widget (e.g. overlay), coordinates are local.
         // Important: Popover must have a parent to be realized.
-        
+
         popover.unparent();
         popover.set_parent(widget);
-        
+
         let target_x = x;
         let target_y = y;
-        
-        popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(target_x as i32, target_y as i32, 1, 1)));
-        
+
+        popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(
+            target_x as i32,
+            target_y as i32,
+            1,
+            1,
+        )));
+
         // Define actions
         let action_group = gtk4::gio::SimpleActionGroup::new();
-        
+
         let sender_clone = sender.clone();
         let uuid_clone = uuid.to_string();
         let action = gtk4::gio::SimpleAction::new("delete", None);
         action.connect_activate(move |_, _| {
-             if is_recycle_bin {
-                  sender_clone.input(SidebarInput::EmptyRecycleBin(uuid_clone.clone())); 
-             } else if is_group {
+            if is_recycle_bin {
+                sender_clone.input(SidebarInput::EmptyRecycleBin(uuid_clone.clone()));
+            } else if is_group {
                 sender_clone.input(SidebarInput::DeleteGroup(uuid_clone.clone()));
             } else {
                 sender_clone.input(SidebarInput::DeleteEntry(uuid_clone.clone()));
@@ -690,28 +759,28 @@ impl Sidebar {
         action_group.add_action(&action);
 
         if is_recycle_bin || is_under_recycle_bin {
-             let sender_clone = sender.clone();
-             let uuid_clone = uuid.to_string();
-             
-             if is_recycle_bin {
-                 let action = gtk4::gio::SimpleAction::new("empty", None);
-                 action.connect_activate(move |_, _| {
-                     sender_clone.input(SidebarInput::EmptyRecycleBin(uuid_clone.clone()));
-                 });
-                 action_group.add_action(&action);
-             } else {
-                 let action = gtk4::gio::SimpleAction::new("delete_perm", None);
-                 action.connect_activate(move |_, _| {
-                     if is_group {
+            let sender_clone = sender.clone();
+            let uuid_clone = uuid.to_string();
+
+            if is_recycle_bin {
+                let action = gtk4::gio::SimpleAction::new("empty", None);
+                action.connect_activate(move |_, _| {
+                    sender_clone.input(SidebarInput::EmptyRecycleBin(uuid_clone.clone()));
+                });
+                action_group.add_action(&action);
+            } else {
+                let action = gtk4::gio::SimpleAction::new("delete_perm", None);
+                action.connect_activate(move |_, _| {
+                    if is_group {
                         sender_clone.input(SidebarInput::PermanentDeleteGroup(uuid_clone.clone()));
-                     } else {
+                    } else {
                         sender_clone.input(SidebarInput::PermanentDeleteEntry(uuid_clone.clone()));
-                     }
-                 });
-                 action_group.add_action(&action);
-             }
+                    }
+                });
+                action_group.add_action(&action);
+            }
         }
-        
+
         popover.insert_action_group("ctx", Some(&action_group));
 
         popover.popup();
