@@ -709,7 +709,7 @@ impl EntryDetailView {
         });
         value_row.append(&copy_btn);
 
-        let open_btn = gtk4::Button::from_icon_name("document-open-symbolic");
+        let open_btn = gtk4::Button::from_icon_name("web-browser-symbolic");
         open_btn.add_css_class("flat");
         let url_clone = url.to_string();
         let sender_clone = sender.clone();
