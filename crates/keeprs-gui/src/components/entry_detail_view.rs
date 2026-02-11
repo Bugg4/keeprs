@@ -45,6 +45,8 @@ pub enum EntryDetailViewInput {
     EditUrl(String),
     /// Edit notes.
     EditNotes(String),
+    /// Favicon fetched (bytes).
+    FaviconFetched(Option<Vec<u8>>),
 }
 
 #[derive(Debug, Clone)]
@@ -74,6 +76,7 @@ pub struct EntryDetailView {
     show_entropy_bar: bool,
     show_totp_default: bool,
     trash_mode: bool,
+    favicon: Option<gdk::Texture>,
 }
 
 
@@ -114,6 +117,7 @@ impl Component for EntryDetailView {
             show_entropy_bar,
             show_totp_default,
             trash_mode: false,
+            favicon: None,
         };
 
         let widgets = view_output!();
@@ -138,6 +142,24 @@ impl Component for EntryDetailView {
                 self.edited_entry = None;
                 self.password_visible = false;
                 self.totp_visible = self.show_totp_default;
+                self.favicon = None;
+                
+                // Fetch favicon if URL exists
+                if let Some(ref e) = self.entry {
+                    if !e.url.is_empty() {
+                         let url_str = e.url.clone();
+                         let sender_clone = sender.clone();
+                         std::thread::spawn(move || {
+                             let favicon_url = format!("https://www.google.com/s2/favicons?domain_url={}&sz=64", url_str);
+                             let result = reqwest::blocking::get(&favicon_url)
+                                 .ok()
+                                 .and_then(|resp| resp.bytes().ok())
+                                 .map(|b| b.to_vec());
+                             sender_clone.input(EntryDetailViewInput::FaviconFetched(result));
+                         });
+                    }
+                }
+
                 self.rebuild_view(widgets, &sender);
             }
 
@@ -200,6 +222,15 @@ impl Component for EntryDetailView {
              EntryDetailViewInput::EditNotes(notes) => {
                  if let Some(ref mut entry) = self.edited_entry {
                     entry.notes = notes;
+                }
+            }
+            EntryDetailViewInput::FaviconFetched(data) => {
+                if let Some(bytes) = data {
+                    let bytes = gdk::glib::Bytes::from(&bytes);
+                    self.favicon = gdk::Texture::from_bytes(&bytes).ok();
+                    if !self.editing {
+                        self.rebuild_view(widgets, &sender);
+                    }
                 }
             }
         }
@@ -646,10 +677,19 @@ impl EntryDetailView {
         favicon_box.add_css_class("favicon-box"); 
         let favicon = gtk4::Image::new();
         favicon.set_pixel_size(16);
-        // Simplification: We don't fetch favicon here for now, or we need to port that logic too.
-        // For strict refactor, we skip favicon fetching logic or duplicate it.
-        // Let's hide it for now to avoid complexity in this step.
-        favicon.set_visible(false); 
+        
+        if let Some(ref texture) = self.favicon {
+             favicon.set_paintable(Some(texture));
+             favicon.set_visible(true);
+        } else {
+             // Placeholder or hidden?
+             // Use a default globe icon if no favicon yet?
+             // Or just hide.
+             // Let's use world icon as placeholder
+             favicon.set_icon_name(Some("network-server-symbolic"));
+             favicon.set_visible(true);
+        }
+       
         favicon_box.append(&favicon);
         value_row.append(&favicon_box);
 
@@ -669,7 +709,7 @@ impl EntryDetailView {
         });
         value_row.append(&copy_btn);
 
-        let open_btn = gtk4::Button::from_icon_name("external-link-symbolic");
+        let open_btn = gtk4::Button::from_icon_name("document-open-symbolic");
         open_btn.add_css_class("flat");
         let url_clone = url.to_string();
         let sender_clone = sender.clone();
