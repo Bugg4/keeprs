@@ -2,7 +2,7 @@
 
 A modern, fast, and native KeePass client for Linux, built with **Rust**, **GTK4**, and **Relm4**.
 
-![Keeprs Screenshot](screenshot.png)
+![alt text](screenshot.png)
 
 ## Features
 
@@ -35,6 +35,20 @@ sudo apt install libgtk-4-dev
 git clone https://github.com/username/keeprs.git
 cd keeprs
 cargo run --release
+```
+
+### Demo Database
+
+A mock database can be generated to try out (or screenshot) all features — attachments, TOTP codes, notes, favicons, custom fields, and a folder tree — without touching a real vault:
+
+```bash
+cargo run --bin create_demo_db
+```
+
+This generates `demo.kdbx` (master password: `demo`). Point your config at it to take a look:
+
+```toml
+database_path = "/path/to/keeprs/demo.kdbx"
 ```
 
 ## Configuration
